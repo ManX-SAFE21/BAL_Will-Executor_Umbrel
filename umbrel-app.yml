@@ -1,0 +1,88 @@
+manifestVersion: 1
+id: bitcoin-after-life-will-executor
+name: Bitcoin After Life Will Executor
+tagline: A Will Executor for Bitcoin — store pre-signed transactions with a future locktime
+icon: https://we.safe21.io/icon.svg
+category: Bitcoin
+version: "0.2.3-umbrel.13"
+port: 9140
+tor: true
+description: >-
+  Bitcoin After Life Will Executor is a Will Executor (Dead Man's Switch) for Bitcoin.
+  Create pre-signed transactions with a future locktime, submit them to
+  this server, and they will be broadcast automatically when the time comes.
+
+
+  **How it works**
+
+  1. Create a Bitcoin transaction with a future locktime (block height or
+     timestamp) and sign it offline using your wallet.
+  2. Submit the raw hex to this server. Include a small fee output to the
+     server's Bitcoin address.
+  3. The server stores your transaction and watches every new block via ZMQ.
+  4. When the locktime is reached, the server broadcasts your transaction to
+     the Bitcoin network.
+
+
+  **Features**
+
+  - Web dashboard with real-time per-network stats (total, waiting, sent,
+    failed transactions).
+  - Settings panel to change payment address, minimum fee, and server
+    description at runtime — no rebuild needed.
+  - Danger confirmation modal: type "Ok, I'm secure of this" before
+    applying changes to address/fee.
+  - Submit raw transactions via the dashboard or the HTTP API.
+  - Search transactions by txid with status badges (pulsing animation for
+    waiting transactions).
+  - Tor address display for private access.
+  - ZMQ auto-detection and bitcoin.conf auto-configuration.
+  - Cloudflare Tunnel ready: Settings button hidden on public domain,
+    POST /settings returns 403 on public hostname.
+  - Backup & Restore: download the full SQLite database, merge backups
+    from other instances (INSERT OR IGNORE — never overwrites existing data).
+  - Weekly automatic backups (every Sunday, 12-week retention).
+  - Electrum plugin compatible: double-slash normalization in nginx.
+  - Three-container architecture: server (Rust HTTP API), pusher
+    (Rust ZMQ watcher), ui (Nginx reverse proxy).
+  - Auto-start via systemd service (survives Umbrel OS reboots).
+  - Persistent SQLite database on the Umbrel app-data volume.
+
+
+  **API Endpoints**
+
+  | Method | Path | Description |
+  |---|---|---|
+  | GET | /version | Server version |
+  | GET | /&lt;net&gt;/info | Payment address + fee + description |
+  | GET | /&lt;net&gt;/stats | Aggregate transaction statistics |
+  | POST | /&lt;net&gt;/pushtxs | Submit raw transactions |
+  | POST | /searchtx | Look up a transaction by txid |
+  | GET | /settings | Current address + fee + description |
+  | POST | /settings | Update address, fee, description |
+  | GET | /backup | Download full database backup |
+  | POST | /merge | Upload and merge a backup database |
+  | GET | /zmq-status.json | ZMQ connection status |
+
+
+  **Dependencies**
+
+  Requires Bitcoin Core with ZMQ enabled (zmqpubhashblock). The app
+  auto-detects the ZMQ port and can auto-configure bitcoin.conf on Umbrel.
+developer: Bitcoin After Life
+website: https://bitcoin-after.life
+dependencies:
+  - bitcoin
+repo: https://bitcoin-after.life/gitea/bitcoinafterlife/bal-server
+support: https://bitcoin-after.life
+gallery:
+  - https://files.catbox.moe/p8hqd5.png
+  - https://files.catbox.moe/z7yt3h.png
+  - https://files.catbox.moe/207y06.png
+  - https://files.catbox.moe/lxkrsf.png
+  - https://files.catbox.moe/du3ea5.png
+releaseNotes: >-
+  - Custom branding: upload logo + set text via Settings UI.
+  - Logo visible publicly via /api/custom-logo and /<chain>/info.
+  - All Unicode mojibake fixed across every file.
+  - .env.example included for public distribution.

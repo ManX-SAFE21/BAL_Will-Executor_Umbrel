@@ -1,0 +1,31 @@
+# =============================================================================
+# Dockerfile.ui — Nginx web dashboard for Bitcoin After Life
+# =============================================================================
+# A minimal nginx image that:
+#   1. Serves the static HTML dashboard (ui/index.html)
+#   2. Reverse-proxies /api/* → bal-server:9137
+#   3. Exposes the Tor hostname (if available) at /api/tor-address
+# =============================================================================
+
+FROM nginx:1.27-alpine
+
+# Install bash for the entrypoint script
+RUN apk add --no-cache bash
+
+# Copy the static web UI files
+COPY ui/index.html /usr/share/nginx/html/index.html
+COPY icon.svg /usr/share/nginx/html/icon.svg
+
+# Copy the custom nginx configuration
+COPY ui/nginx.conf /etc/nginx/conf.d/default.conf
+
+# Remove the default nginx config to avoid conflicts
+RUN rm -f /etc/nginx/conf.d/default.conf.bak
+
+# Copy the UI entrypoint script
+COPY scripts/entrypoint-ui.sh /entrypoint-ui.sh
+RUN chmod +x /entrypoint-ui.sh
+
+EXPOSE 80
+
+CMD ["/entrypoint-ui.sh"]

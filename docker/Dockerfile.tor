@@ -1,0 +1,4 @@
+FROM alpine:3.20
+RUN apk add --no-cache tor
+COPY docker/torrc /etc/tor/torrc
+CMD ["sh", "-c", "mkdir -p /var/lib/tor/hidden_service/ && chmod 700 /var/lib/tor/hidden_service/ && tor -f /etc/tor/torrc"]

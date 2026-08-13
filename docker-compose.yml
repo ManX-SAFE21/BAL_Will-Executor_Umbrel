@@ -1,0 +1,145 @@
+services:
+
+  # ---------------------------------------------------------------------------
+  # server: HTTP API server (Rust/Hyper, port 9137 internal)
+  # ---------------------------------------------------------------------------
+  server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rust
+    image: bal-will-rust:latest
+    container_name: bal-will-server
+    restart: unless-stopped
+
+    command: ["/scripts/entrypoint-server.sh"]
+
+    environment:
+      - BAL_SERVER_DB_FILE=/data/bal.db
+      - BAL_SERVER_PUB_KEY_PATH=/data/keys/public_key.pem
+      - BAL_SERVER_BIND_ADDRESS=0.0.0.0
+      - BAL_SERVER_BIND_PORT=9137
+      - BAL_SERVER_BITCOIN_ADDRESS=${BAL_BITCOIN_ADDRESS:-}
+      - BAL_SERVER_BITCOIN_FIXED_FEE=${BAL_BITCOIN_FEE:-50000}
+      - BAL_SERVER_SIGNET_ADDRESS=${BAL_SIGNET_ADDRESS:-}
+      - BAL_SERVER_SIGNET_FIXED_FEE=${BAL_SIGNET_FEE:-50000}
+      - BAL_SERVER_TESTNET_ADDRESS=${BAL_TESTNET_ADDRESS:-}
+      - BAL_SERVER_TESTNET_FIXED_FEE=${BAL_TESTNET_FEE:-50000}
+      - BAL_SERVER_REGTEST_ADDRESS=${BAL_REGTEST_ADDRESS:-}
+      - BAL_SERVER_REGTEST_FIXED_FEE=${BAL_REGTEST_FEE:-0}
+      - RUST_LOG=${BAL_LOG_LEVEL:-info}
+      - BAL_SERVER_EXPOSE_STATS=${BAL_EXPOSE_STATS:-true}
+      - BAL_PUBLIC_URL=${BAL_PUBLIC_URL:-}
+
+    volumes:
+      - ${APP_DATA_DIR:-/home/umbrel/umbrel/app-data/bal-will}/data:/data
+
+    networks:
+      internal:
+        # Alias so ui/nginx.conf (shared with the Umbrel app deployment, where
+        # the service is named "bal-server") can proxy to this container too.
+        aliases:
+          - bal-server
+
+    expose:
+      - "9137"
+
+  # ---------------------------------------------------------------------------
+  # pusher: block watcher daemon (Rust)
+  # ---------------------------------------------------------------------------
+  pusher:
+    image: bal-will-rust:latest
+    container_name: bal-will-pusher
+    restart: unless-stopped
+
+    depends_on:
+      - server
+
+    command: ["/scripts/entrypoint-pusher.sh"]
+
+    environment:
+      - BAL_PUSHER_DB_FILE=/data/bal.db
+      - APP_BITCOIN_NODE_IP=${APP_BITCOIN_NODE_IP:-}
+      - APP_BITCOIN_RPC_PORT=${APP_BITCOIN_RPC_PORT:-8332}
+      - APP_BITCOIN_RPC_USER=${APP_BITCOIN_RPC_USER:-}
+      - APP_BITCOIN_RPC_PASS=${APP_BITCOIN_RPC_PASS:-}
+      - APP_BITCOIN_DATA_DIR=${APP_BITCOIN_DATA_DIR:-}
+      - BAL_ZMQ_PORT=${BAL_ZMQ_PORT:-28332}
+      - BAL_PUSHER_BITCOIN_HOST=http://${APP_BITCOIN_NODE_IP:-bitcoin}
+      - BAL_PUSHER_BITCOIN_PORT=${APP_BITCOIN_RPC_PORT:-8332}
+      - BAL_PUSHER_BITCOIN_RPC_USER=${APP_BITCOIN_RPC_USER:-}
+      - BAL_PUSHER_BITCOIN_RPC_PASSWORD=${APP_BITCOIN_RPC_PASS:-}
+      - BAL_PUSHER_BITCOIN_COOKIE_FILE=${BAL_PUSHER_BITCOIN_COOKIE_FILE:-/bitcoin-data/.cookie}
+      - BAL_PUSHER_ZMQ_LISTENER=tcp://${APP_BITCOIN_NODE_IP:-bitcoin}:${BAL_ZMQ_PORT:-28332}
+      - BAL_PUSHER_BITCOIN_ZMQ_HASHBLOCK=${BAL_PUSHER_BITCOIN_ZMQ_HASHBLOCK:-tcp://${APP_BITCOIN_NODE_IP:-bitcoin}:${BAL_ZMQ_PORT:-28332}}
+      - BAL_PUSHER_NETWORK=${BAL_PUSHER_NETWORK:-bitcoin}
+      - SSL_KEY_PATH=/data/keys/private_key.pem
+      - BAL_PUSHER_SEND_STATS=${BAL_SEND_STATS:-false}
+      - BAL_SERVER_URL=${BAL_PUBLIC_URL:-}
+      - RUST_LOG=${BAL_LOG_LEVEL:-info}
+
+    volumes:
+      - ${APP_DATA_DIR:-/home/umbrel/umbrel/app-data/bal-will}/data:/data
+      - ${APP_BITCOIN_DATA_DIR:-/tmp/bitcoin-data}:/bitcoin-data:ro
+
+    networks:
+      - internal
+      - default
+      - umbrel_main_network
+
+  # ---------------------------------------------------------------------------
+  # ui: Nginx web dashboard
+  # ---------------------------------------------------------------------------
+  ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    container_name: bal-will-ui
+    restart: unless-stopped
+
+    depends_on:
+      - server
+
+    environment:
+      - TOR_HOSTNAME_PATH=/tor/hostname
+
+    ports:
+      - "${APP_PORT:-9140}:80"
+
+    volumes:
+      - ${APP_DATA_DIR:-/home/umbrel/umbrel/app-data/bal-will}/data:/app-data:ro
+      - tor-data:/tor:ro
+
+    networks:
+      internal:
+      umbrel_main_network:
+        aliases:
+          - bal-umbrel-ui
+
+  # ---------------------------------------------------------------------------
+  # tor: Tor onion service for private access to the web UI
+  # ---------------------------------------------------------------------------
+  tor:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.tor
+    image: bal-will-tor:latest
+    container_name: bal-will-tor
+    restart: unless-stopped
+    depends_on:
+      - ui
+    networks:
+      - internal
+    volumes:
+      - tor-data:/var/lib/tor/hidden_service/
+
+networks:
+  internal:
+    driver: bridge
+  default:
+    driver: bridge
+  umbrel_main_network:
+    external: true
+
+volumes:
+  tor-data:
+

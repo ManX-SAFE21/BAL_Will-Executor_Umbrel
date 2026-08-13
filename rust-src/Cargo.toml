@@ -1,0 +1,37 @@
+[package]
+name = "bal_server"
+version = "0.2.3-umbrel.13"
+edition = "2024"
+
+# See https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+base64          = { version = "0.22.1" }
+bs58            = { version = "0.4.0" }
+bytes           = { version = "1.2" }
+bitcoin         = { version = "0.32.5" }
+bitcoincore-rpc = { version = "0.19.0" }
+bitcoincore-rpc-json = { version = "0.19.0" }
+byteorder       = { version = "1.5.0" }
+confy           = { version = "0.6.1" }
+chrono          = { version = "0.4.40" }
+env_logger      = { version = "0.11.5" }
+hex             = { version = "0.4.3" }
+hex-conservative = { version = "0.1.1" }
+hyper           = { version = "1.3.1", features = ["http1", "server"] }
+hyper-util      = { version = "0.1.3", features = ["tokio"] }
+http-body-util  = { version = "0.1" }
+log             = { version = "0.4.21" }
+# "vendored" means OpenSSL is compiled from source into the binary.
+# This avoids the need for libssl at runtime and simplifies deployment.
+openssl         = { version = "0.10.74", features = ["vendored"] }
+sha2            = { version = "0.10.8" }
+serde           = { version = "1.0.152", features = ["derive"] }
+serde_json      = { version = "1.0.116" }
+sqlite          = { version = "0.34.0" }
+regex           = { version = "1.10.4" }
+# "socks" feature enables Tor SOCKS5 proxy support for outbound HTTP requests
+reqwest         = { version = "0.12.24", features = ["json", "socks"] }
+tokio           = { version = "1", features = ["rt", "net", "macros", "rt-multi-thread"] }
+# zmq links dynamically to libzmq — must be installed on the system
+zmq             = { version = "0.10.0" }

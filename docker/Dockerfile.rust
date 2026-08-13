@@ -1,0 +1,68 @@
+# =============================================================================
+# Dockerfile.rust — Multi-stage build for bal-server and bal-pusher
+# =============================================================================
+# Stage 1 (builder): Rust 1.87 compiles both binaries.
+# Stage 2 (runtime): Debian slim with only the runtime libs needed.
+#
+# Why multi-stage? The builder image is ~2GB (Rust toolchain + dev headers).
+# The runtime image is ~120MB (just libzmq + libsqlite3).
+# =============================================================================
+
+# --- Stage 1: Build ---
+FROM rust:1.87-slim-bookworm AS builder
+
+# System packages needed at BUILD time:
+#   pkg-config        — lets Cargo find system libraries via pkg-config
+#   libzmq3-dev       — ZeroMQ headers (zmq crate links dynamically to libzmq)
+#   libsqlite3-dev    — SQLite3 headers (sqlite crate links dynamically)
+#   build-essential   — gcc, make, etc. required by some crate build scripts
+#   git               — not needed here but useful if we ever clone deps
+#
+# openssl is NOT listed because Cargo.toml uses features=["vendored"],
+# which compiles OpenSSL from source and links it statically into the binary.
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libzmq3-dev \
+    libsqlite3-dev \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy the Rust source tree
+COPY rust-src/ .
+
+# Build both binaries in release mode.
+# --release enables full optimisations and strips debug symbols,
+# producing much smaller and faster binaries than the debug profile.
+RUN cargo build --release
+
+# --- Stage 2: Runtime ---
+FROM debian:bookworm-slim AS runtime
+
+# Runtime libraries that the binaries link to dynamically:
+#   libzmq5        — ZeroMQ runtime (bal-pusher uses ZMQ SUB socket)
+#   libsqlite3-0   — SQLite3 runtime (both binaries open a .db file)
+#   openssl        — NOT needed (statically compiled via "vendored" feature)
+#   ca-certificates — needed for HTTPS requests (reqwest in bal-pusher)
+#   netcat-openbsd — used by check-zmq.sh to probe the ZMQ port
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libzmq5 \
+    libsqlite3-0 \
+    ca-certificates \
+    netcat-openbsd \
+    openssl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Copy compiled binaries from the builder stage
+COPY --from=builder /build/target/release/bal-server  /usr/local/bin/bal-server
+COPY --from=builder /build/target/release/bal-pusher  /usr/local/bin/bal-pusher
+
+# Copy startup scripts
+COPY scripts/ /scripts/
+RUN chmod +x /scripts/*.sh
+
+# Default data directory; actual path is provided via docker-compose volume
+RUN mkdir -p /data/keys
+
+# No default CMD — each service in docker-compose specifies its own entrypoint

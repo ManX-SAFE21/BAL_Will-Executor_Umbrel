@@ -1,0 +1,20 @@
+# Credentials and secrets
+.env
+
+# Rust build artifacts
+rust-src/target/
+
+# Python dev utilities
+*.py
+
+# IDE and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# Temporary files
+/tmp/

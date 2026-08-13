@@ -1,0 +1,1958 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Bitcoin After Life Will Executor</title>
+    <link rel="icon" type="image/svg+xml" href="/icon.svg">
+  <style>
+    /* =========================================================
+       DESIGN SYSTEM
+       Palette: deep space black + Bitcoin orange + acid green
+       Typography: system-ui for UI, monospace for tx data
+       Signature element: pulsing "time-lock" indicator on txs
+       ========================================================= */
+    :root {
+      --bg:         #080c14;   /* deep navy-black — not pure black, more cosmic */
+      --surface:    #0f1520;   /* card surfaces */
+      --surface2:   #162030;   /* elevated surface (inputs, hover) */
+      --border:     #1e2d42;   /* subtle borders */
+      --border-hi:  #2a4060;   /* focused borders */
+      --text:       #dde8f5;   /* primary text — cool white */
+      --text-muted: #5a7a9a;   /* secondary / labels */
+      --text-dim:   #334455;   /* placeholder / very muted */
+      --accent:     #F7931A;   /* Bitcoin orange */
+      --accent-dim: #7a4810;   /* dim orange for backgrounds */
+      --success:    #b4f047;   /* acid green — the signature color */
+      --success-dim:#2a4010;
+      --error:      #ff4455;
+      --error-dim:  #3d0a10;
+      --warning:    #ffc740;
+      --warning-dim:#3d2d00;
+      --mono:       ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
+      --sans:       system-ui, -apple-system, 'Segoe UI', sans-serif;
+      --radius:     6px;
+      --radius-lg:  12px;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: var(--sans);
+      font-size: 15px;
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ---- Layout ---- */
+    .shell {
+      display: grid;
+      grid-template-rows: 56px 1fr;
+      min-height: 100vh;
+    }
+
+    /* ---- Header ---- */
+    header {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 0 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 700;
+      font-size: 15px;
+      letter-spacing: 0.02em;
+      color: var(--text);
+    }
+    .logo-icon {
+      width: 28px; height: 28px;
+      border-radius: 6px;
+      overflow: hidden;
+      flex-shrink: 0;
+    }
+    .logo-sub { color: var(--text-muted); font-weight: 400; font-size: 12px; margin-left: 2px; }
+
+    /* ---- Branding section (settings) ---- */
+    .branding-preview {
+      width: 64px; height: 64px;
+      border-radius: 8px;
+      overflow: hidden;
+      border: 2px dashed var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background: var(--surface2);
+      flex-shrink: 0;
+    }
+    .branding-preview img {
+      width: 100%; height: 100%;
+      object-fit: contain;
+    }
+    .branding-preview .placeholder {
+      font-size: 10px;
+      color: var(--text-dim);
+      text-align: center;
+      padding: 4px;
+    }
+    .branding-row {
+      display: flex;
+      align-items: flex-start;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+    .branding-fields { flex: 1; }
+    .branding-actions {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .branding-error {
+      font-size: 12px;
+      color: var(--error);
+      margin-top: 6px;
+      display: none;
+    }
+    .branding-error.visible { display: block; }
+
+    nav {
+      display: flex;
+      gap: 4px;
+      margin-left: auto;
+    }
+    .nav-btn {
+      padding: 6px 14px;
+      border-radius: var(--radius);
+      border: none;
+      background: transparent;
+      color: var(--text-muted);
+      font-size: 13px;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .nav-btn:hover { background: var(--surface2); color: var(--text); }
+    .nav-btn.active { background: var(--accent-dim); color: var(--accent); }
+
+    /* ---- Main content ---- */
+    main {
+      padding: 28px 24px;
+      max-width: 900px;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* ---- Panels ---- */
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* ---- Page headings ---- */
+    h2 {
+      font-size: 20px;
+      font-weight: 700;
+      margin-bottom: 20px;
+      color: var(--text);
+    }
+    h2 span { color: var(--accent); }
+
+    /* ---- Cards ---- */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-bottom: 16px;
+    }
+    .card-title {
+      font-size: 11px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      color: var(--text-muted);
+      margin-bottom: 14px;
+    }
+
+    /* ---- Stat row ---- */
+    .stat-grid-top, .stat-grid-bot {
+      display: grid;
+      gap: 12px;
+    }
+    .stat-grid-top { grid-template-columns: repeat(4, 1fr); }
+    .stat-grid-bot { grid-template-columns: repeat(4, 1fr); margin-top: 12px; }
+    .stat-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 4px;
+    }
+    .stat-value {
+      font-size: 17px;
+      font-weight: 700;
+      font-family: var(--mono);
+      color: var(--text);
+      line-height: 1.1;
+    }
+    .stat-value.orange { color: var(--accent); }
+    .stat-value.green  { color: var(--success); }
+    .stat-value.red    { color: var(--error); }
+    .stat-footnote { font-size: 20px; color: var(--text-muted); margin-top: 8px; }
+
+    /* ---- Info rows ---- */
+    .info-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 10px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+    }
+    .info-row:last-child { border-bottom: none; }
+    .info-key {
+      width: 130px;
+      flex-shrink: 0;
+      color: var(--text-muted);
+      font-size: 12px;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+    }
+    .info-val {
+      font-family: var(--mono);
+      font-size: 13px;
+      color: var(--text);
+      word-break: break-all;
+      flex: 1;
+    }
+    .copy-btn {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text-muted);
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      cursor: pointer;
+      flex-shrink: 0;
+      transition: color 0.15s, border-color 0.15s;
+      font-family: var(--sans);
+    }
+    .copy-btn:hover { color: var(--accent); border-color: var(--accent); }
+
+    /* ---- Alert banners ---- */
+    .alert {
+      display: flex;
+      gap: 12px;
+      align-items: flex-start;
+      padding: 14px 16px;
+      border-radius: var(--radius);
+      margin-bottom: 16px;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    .alert-icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .alert.warning { background: var(--warning-dim); border: 1px solid var(--warning); color: var(--warning); }
+    .alert.error   { background: var(--error-dim);   border: 1px solid var(--error);   color: var(--error); }
+    .alert.success { background: var(--success-dim); border: 1px solid var(--success); color: var(--success); }
+    .alert.info    { background: var(--accent-dim);  border: 1px solid var(--accent);  color: var(--accent); }
+    .alert pre {
+      margin-top: 8px;
+      background: rgba(0,0,0,0.3);
+      padding: 8px 10px;
+      border-radius: 4px;
+      font-family: var(--mono);
+      font-size: 12px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      color: inherit;
+    }
+
+    /* ---- Forms ---- */
+    label {
+      display: block;
+      font-size: 12px;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      margin-bottom: 6px;
+    }
+    textarea, input[type="text"], select {
+      width: 100%;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      color: var(--text);
+      font-family: var(--mono);
+      font-size: 13px;
+      padding: 10px 12px;
+      outline: none;
+      transition: border-color 0.15s;
+      resize: vertical;
+    }
+    textarea:focus, input[type="text"]:focus, select:focus {
+      border-color: var(--accent);
+    }
+    textarea { min-height: 120px; }
+    select { font-family: var(--sans); cursor: pointer; }
+    select option { background: var(--surface2); }
+
+    .form-group { margin-bottom: 16px; }
+    .form-hint { font-size: 12px; color: var(--text-muted); margin-top: 5px; }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 10px 20px;
+      border-radius: var(--radius);
+      border: none;
+      font-size: 14px;
+      font-weight: 600;
+      font-family: var(--sans);
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn:active { transform: scale(0.97); }
+    .btn-primary { background: var(--accent); color: #000; }
+    .btn-primary:hover { opacity: 0.9; }
+    .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
+    .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
+    .btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    /* ---- Result display ---- */
+    .result-box {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      font-family: var(--mono);
+      font-size: 13px;
+      margin-top: 16px;
+      white-space: pre-wrap;
+      word-break: break-all;
+      display: none;
+    }
+    .result-box.visible { display: block; }
+    .result-box.ok  { border-color: var(--success); color: var(--success); }
+    .result-box.err { border-color: var(--error);   color: var(--error); }
+
+    /* ---- TX status badge — the signature element ---- */
+    /* A pulsing dot that visually represents a time-locked tx waiting to fire */
+    .status-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 3px 9px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+    .status-badge .dot {
+      width: 7px; height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .status-badge.waiting { background: var(--accent-dim); color: var(--accent); }
+    .status-badge.waiting .dot { background: var(--accent); animation: pulse-orange 1.8s infinite; }
+    .status-badge.sent    { background: var(--success-dim); color: var(--success); }
+    .status-badge.sent    .dot { background: var(--success); }
+    .status-badge.failed  { background: var(--error-dim); color: var(--error); }
+    .status-badge.failed  .dot { background: var(--error); }
+    .status-badge.mempool  { background: var(--warning-dim); color: var(--warning); }
+    .status-badge.mempool  .dot { background: var(--warning); animation: pulse-orange 1.8s infinite; }
+    .status-badge.confirmed { background: var(--success-dim); color: var(--success); }
+    .status-badge.confirmed .dot { background: var(--success); }
+    .status-badge.other-will { background: var(--success-dim); color: var(--success); }
+    .status-badge.other-will .dot { background: var(--success); }
+
+    @keyframes pulse-orange {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50%       { opacity: 0.4; transform: scale(0.7); }
+    }
+
+    /* ---- TX search result ---- */
+    .tx-result {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-lg);
+      padding: 20px;
+      margin-top: 20px;
+      display: none;
+    }
+    .tx-result.visible { display: block; }
+    .tx-result-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+    }
+    .tx-hex {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 12px;
+      font-family: var(--mono);
+      font-size: 11px;
+      color: var(--text-muted);
+      word-break: break-all;
+      margin-top: 10px;
+      max-height: 120px;
+      overflow-y: auto;
+    }
+
+    /* ---- Loading spinner ---- */
+    .spinner {
+      display: inline-block;
+      width: 14px; height: 14px;
+      border: 2px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      vertical-align: middle;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---- Network selector ---- */
+    .net-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 4px 10px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      cursor: pointer;
+      border: 1px solid var(--border);
+      background: var(--surface2);
+      color: var(--text-muted);
+      transition: all 0.15s;
+    }
+    .net-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
+    .net-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+
+    /* ---- Tor address box ---- */
+    .tor-box {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 10px 14px;
+    }
+    .tor-onion { font-size: 20px; }
+    .tor-addr { font-family: var(--mono); font-size: 12px; color: var(--text); flex: 1; word-break: break-all; }
+
+    /* ---- Danger confirmation modal ---- */
+    .modal-overlay {
+      display: none;
+      position: fixed;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.75);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+    }
+    .modal-overlay.visible { display: flex; }
+    .modal-box {
+      background: var(--surface);
+      border: 2px solid var(--error);
+      border-radius: var(--radius-lg);
+      padding: 24px;
+      max-width: 500px;
+      width: 90%;
+    }
+    .modal-box h3 {
+      color: var(--error);
+      font-size: 16px;
+      margin-bottom: 12px;
+    }
+    .modal-box p {
+      font-size: 13px;
+      color: var(--text-muted);
+      line-height: 1.6;
+      margin-bottom: 16px;
+    }
+    .modal-box .warning-icon {
+      font-size: 32px;
+      display: block;
+      text-align: center;
+      margin-bottom: 12px;
+    }
+    .modal-box label {
+      font-size: 12px;
+      color: var(--error);
+    }
+    .modal-box input[type="text"] {
+      background: var(--bg);
+      border-color: var(--error-dim);
+      color: var(--text);
+      margin-bottom: 16px;
+    }
+    .modal-box input[type="text"]:focus {
+      border-color: var(--error);
+    }
+    .modal-actions {
+      display: flex;
+      gap: 10px;
+      justify-content: flex-end;
+    }
+    .btn-danger {
+      background: var(--error);
+      color: #fff;
+      border: none;
+    }
+    .btn-danger:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    .btn-danger:hover:not(:disabled) { opacity: 0.85; }
+
+    /* ---- Scrollbar styling ---- */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: var(--surface); }
+    ::-webkit-scrollbar-thumb { background: var(--border-hi); border-radius: 3px; }
+
+    /* ---- Transactions table ---- */
+    .tx-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    .tx-table th { padding: 8px 6px; text-align: left; color: var(--text-muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; border-bottom: 2px solid var(--border); }
+    .tx-table td { padding: 10px 6px; border-bottom: 1px solid var(--border); }
+    .tx-table tr { cursor: pointer; transition: background 0.15s; }
+    .tx-table tr:hover { background: var(--surface2); }
+    .tx-table .mono { font-family: var(--mono); font-size: 11px; }
+    .tx-table .right { text-align: right; }
+    .tx-table .center { text-align: center; }
+    .tx-table .muted { color: var(--text-muted); font-size: 11px; }
+    .tx-table tr.locktime-separator td { padding: 6px 6px; border-bottom: none; cursor: default; text-align: center; }
+    .tx-table tr.locktime-separator:hover { background: transparent; }
+    .tx-table .sep-label { color: var(--text-muted); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; }
+
+    /* ---- Detail modal ---- */
+    #detail-modal .modal-box { max-width: 700px; max-height: 85vh; border-color: var(--accent); display: flex; flex-direction: column; }
+    #detail-modal .modal-box h3 { color: var(--accent); flex-shrink: 0; }
+    #detail-content { overflow-y: auto; flex: 1; min-height: 0; }
+    #detail-modal .modal-actions { flex-shrink: 0; padding-top: 12px; }
+    .detail-section { margin-bottom: 14px; }
+    .detail-section-title { font-size: 11px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 6px; }
+    .detail-row { display: flex; padding: 4px 0; font-size: 12px; border-bottom: 1px solid var(--border); }
+    .detail-row:last-child { border-bottom: none; }
+    .detail-key { width: 100px; flex-shrink: 0; color: var(--text-muted); font-size: 11px; }
+    .detail-val { font-family: var(--mono); font-size: 11px; word-break: break-all; flex: 1; }
+    .detail-hex { background: var(--surface2); border: 1px solid var(--border); border-radius: 4px; padding: 10px; font-family: var(--mono); font-size: 11px; color: var(--text-muted); word-break: break-all; max-height: 120px; overflow-y: auto; margin-top: 4px; }
+
+    /* ---- Responsive ---- */
+    @media (max-width: 600px) {
+      main { padding: 16px 14px; }
+      header { padding: 0 14px; }
+      .stat-grid-top { grid-template-columns: 1fr 1fr; }
+      .stat-grid-bot { grid-template-columns: 1fr 1fr; }
+      .logo-sub { display: none; }
+    }
+  </style>
+</head>
+<body>
+<div class="shell">
+  <header>
+    <div class="logo">
+      <div class="logo-icon"><img id="header-logo-img" src="/icon.svg" width="28" height="28" style="border-radius:6px;display:block;"></div>
+      <span id="header-logo-text">Bitcoin After Life</span>
+      <span class="logo-sub" id="header-logo-sub">— Will Executor</span>
+    </div>
+    <nav>
+      <button class="nav-btn active" onclick="showPanel('dashboard')">Dashboard</button>
+      <button class="nav-btn" onclick="showPanel('submit')">Submit TX</button>
+      <button class="nav-btn" onclick="showPanel('search')">Search TX</button>
+      <button class="nav-btn" id="nav-transactions" onclick="showPanel('transactions')" style="display:none">Transactions</button>
+      <button class="nav-btn" id="nav-backup" onclick="showPanel('backup')" style="display:none">BACKUP</button>
+      <button class="nav-btn" id="nav-settings" onclick="showPanel('settings')" style="display:none">Settings</button>
+    </nav>
+  </header>
+
+  <main>
+
+    <!-- ===================== DASHBOARD ===================== -->
+    <div id="panel-dashboard" class="panel active">
+      <h2>Server <span>Status</span></h2>
+
+      <!-- ZMQ banners (shown dynamically based on zmq-status.json) -->
+      <div id="zmq-ok" class="alert success" style="display:none">
+        <div class="alert-icon">&#10003;</div>
+        <div><strong>ZMQ connected.</strong> bal-pusher is watching every Bitcoin block.</div>
+      </div>
+      <div id="zmq-restart" class="alert warning" style="display:none">
+        <div class="alert-icon">🔄</div>
+        <div>
+          <strong>Bitcoin Core restart required.</strong><br/>
+          The ZMQ configuration was added to <code>bitcoin.conf</code> automatically.
+          Please restart Bitcoin Core for it to take effect:
+          <pre>Umbrel → Settings → Bitcoin Node → Restart</pre>
+          bal-pusher will connect automatically after the restart.
+        </div>
+      </div>
+      <div id="zmq-warning" class="alert warning" style="display:none">
+        <div class="alert-icon">⚠️</div>
+        <div>
+          <strong>ZMQ not detected on your Bitcoin node.</strong><br/>
+          bal-pusher cannot receive new-block notifications.
+          Add this line to your <code>bitcoin.conf</code> and restart Bitcoin Core:
+          <pre>zmqpubhashblock=tcp://0.0.0.0:28332</pre>
+          On Umbrel: Settings → Bitcoin Node → Advanced → Edit Config
+        </div>
+      </div>
+
+      <!-- Server info card -->
+      <div class="card" id="server-info-card">
+        <div class="card-title">Server Info</div>
+        <div id="server-info">
+          <div class="info-row">
+            <span class="info-key">Version</span>
+            <span class="info-val" id="srv-version"><span class="spinner"></span></span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Status</span>
+            <span class="info-val" id="srv-status">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Description</span>
+            <span class="info-val" id="srv-description">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Network selector -->
+      <div class="net-chips" id="net-chips">
+        <!-- populated by JS once we know which networks are enabled -->
+      </div>
+
+      <!-- Network stats card -->
+      <div class="card">
+        <div class="card-title">Network Stats — <span id="active-net-label">…</span></div>
+        <div class="stat-grid-top">
+          <div class="stat-box"><div class="stat-label">Total TXs</div><div class="stat-value" id="s-total">—</div></div>
+          <div class="stat-box"><div class="stat-label">Waiting</div><div class="stat-value orange" id="s-waiting">—</div></div>
+          <div class="stat-box"><div class="stat-label">Sent</div><div class="stat-value green" id="s-sent">—</div></div>
+          <div class="stat-box"><div class="stat-label">Failed</div><div class="stat-value red" id="s-failed">—</div></div>
+        </div>
+        <div class="stat-grid-bot">
+          <div class="stat-box"><div class="stat-label">Gain Fee*</div><div class="stat-value green" id="s-confirmed-profit">—</div></div>
+          <div class="stat-box"><div class="stat-label">Total Fee Will-Executor*</div><div class="stat-value green" id="s-total-executor-profit">—</div></div>
+          <div class="stat-box"><div class="stat-label">Waiting Fee*</div><div class="stat-value" id="s-protocol-profit">—</div></div>
+          <div class="stat-box"><div class="stat-label">Protocol Fee*</div><div class="stat-value" id="s-total-profit">—</div></div>
+        </div>
+        <div class="stat-footnote">* The fees and data shown are since the activation date of this Will-Executor.</div>
+      </div>
+
+      <!-- Network info card (address + fee) -->
+      <div class="card">
+        <div class="card-title">Payment Address</div>
+        <div id="net-info-rows">
+          <div class="info-row">
+            <span class="info-key">Address</span>
+            <span class="info-val" id="ni-address"><span class="spinner"></span></span>
+            <button class="copy-btn" onclick="copyText('ni-address')">Copy</button>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Min Fee</span>
+            <span class="info-val" id="ni-fee">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Chain</span>
+            <span class="info-val" id="ni-chain">—</span>
+          </div>
+          <div class="info-row">
+            <span class="info-key">Wallet Balance</span>
+            <span class="info-val" id="ni-balance">—</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Tor address card -->
+      <div class="card">
+        <div class="card-title">Tor Access</div>
+        <div class="tor-box">
+          <span class="tor-onion"><span class="tor-onion" style="font-size:14px;font-weight:700;">TOR</span></span>
+          <span class="tor-addr" id="tor-addr">Loading…</span>
+          <button class="copy-btn" onclick="copyText('tor-addr')">Copy</button>
+        </div>
+        <p style="font-size:12px; color:var(--text-muted); margin-top:10px;">
+          Submit transactions privately from anywhere using this .onion address.
+        </p>
+      </div>
+    </div>
+
+    <!-- ===================== SUBMIT TX ===================== -->
+    <div id="panel-submit" class="panel">
+      <h2>Submit <span>Transaction</span></h2>
+
+      <div class="card">
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:18px; line-height:1.7;">
+          Paste one or more pre-signed raw Bitcoin transactions (hex-encoded).
+          Each transaction must include an output paying at least the minimum fee
+          to the server's address. The server will broadcast it when its locktime
+          is reached.
+        </p>
+
+        <div class="form-group">
+          <label for="submit-network">Network</label>
+          <select id="submit-network">
+            <option value="bitcoin">Mainnet (bitcoin)</option>
+            <option value="testnet">Testnet</option>
+            <option value="signet">Signet</option>
+            <option value="regtest">Regtest</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label for="tx-hex-input">Raw Transaction (hex) — one per line</label>
+          <textarea id="tx-hex-input" placeholder="0200000001..."></textarea>
+          <div class="form-hint">Only hex characters (0-9, a-f). Multiple transactions: one per line.</div>
+        </div>
+
+        <button class="btn btn-primary" id="submit-btn" onclick="submitTx()">
+          🔒 Submit &amp; Lock
+        </button>
+
+        <div id="submit-result" class="result-box"></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">How it works</div>
+        <div class="info-row">
+          <span class="info-key">1. Sign</span>
+          <span class="info-val" style="font-family:var(--sans); font-size:13px;">Create a Bitcoin transaction with a future locktime and sign it offline using your wallet.</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">2. Submit</span>
+          <span class="info-val" style="font-family:var(--sans); font-size:13px;">Paste the hex here. Include an output paying the fee to the server's address.</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">3. Wait</span>
+          <span class="info-val" style="font-family:var(--sans); font-size:13px;">This server watches every Bitcoin block. When the locktime is reached, it broadcasts your tx automatically.</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== SEARCH TX ===================== -->
+    <div id="panel-search" class="panel">
+      <h2>Search <span>Transaction</span></h2>
+
+      <div class="card">
+        <div class="form-group">
+          <label for="search-txid">Transaction ID (txid)</label>
+          <input type="text" id="search-txid"
+                 placeholder="241ac86bdbf1408198b8c6df77e88159b43a9bb3..." />
+          <div class="form-hint">Paste the txid of a previously submitted transaction.</div>
+        </div>
+        <button class="btn btn-primary" onclick="searchTx()">🔍 Search</button>
+      </div>
+
+      <div id="tx-result" class="tx-result">
+        <div class="tx-result-header">
+          <strong style="font-size:14px;">Transaction Found</strong>
+          <div id="tx-status-badge"></div>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Status</span>
+          <span class="info-val" id="tx-status-text">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Our Address</span>
+          <span class="info-val" id="tx-address">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Fee Paid</span>
+          <span class="info-val" id="tx-fee">—</span>
+        </div>
+        <div class="info-row">
+          <span class="info-key">Submitted</span>
+          <span class="info-val" id="tx-time">—</span>
+        </div>
+        <div style="font-size:12px; color:var(--text-muted); margin-top:12px; margin-bottom:4px;">RAW HEX</div>
+        <div class="tx-hex" id="tx-hex"></div>
+      </div>
+
+      <div id="tx-not-found" class="alert error" style="display:none">
+        <div class="alert-icon">✗</div>
+        <div>Transaction not found. It may not have been submitted to this server.</div>
+      </div>
+    </div>
+
+    <!-- ===================== SETTINGS ===================== -->
+    <div id="panel-settings" class="panel">
+      <h2>Payment <span>Settings</span></h2>
+
+      <div class="card">
+        <div class="card-title">Bitcoin Mainnet</div>
+
+        <div class="form-group">
+          <label for="settings-address">Payment Address</label>
+          <input type="text" id="settings-address" placeholder="bc1q..." />
+          <div class="form-hint" style="color:var(--accent);">
+            It is strongly recommended to use a single fixed address for the entire lifetime of this will executor. Changing the address later may cause previously submitted transactions to pay fees to the old address, which could become unmonitored.
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="settings-fee">Minimum Fee (satoshis) <span style="color:var(--text-muted);font-weight:400;font-size:0.85em;">must be > Dust Amount (546 sats)</span></label>
+          <input type="text" id="settings-fee" placeholder="30000" />
+          <div class="form-hint">Minimum fee in satoshis that each transaction must pay.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="settings-info">Server Description</label>
+          <input type="text" id="settings-info" placeholder="Bitcoin After Life Will Executor (Umbrel)" />
+          <div class="form-hint">This description is shown in the /&lt;chain&gt;/info endpoint response.</div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveSettings()" id="settings-save-btn">
+          Save Changes
+        </button>
+
+        <div id="settings-result" class="result-box"></div>
+      </div>
+
+      <!-- Server Branding -->
+      <div class="card">
+        <div class="card-title">Server Branding</div>
+
+        <div class="branding-row">
+          <div class="branding-preview" id="logo-preview">
+            <div class="placeholder" style="display:flex;">No<br/>Logo</div>
+            <img id="logo-preview-img" style="display:none;" />
+          </div>
+          <div class="branding-fields">
+            <div class="form-group">
+              <label>Logo Image</label>
+              <input type="file" id="logo-file-input" accept=".png,.svg,.jpg,.jpeg,.webp" onchange="validateLogo(this)" />
+              <div class="form-hint">PNG, SVG, JPEG, WebP &#xB7; max 200KB &#xB7; 32&#x2013;1024 px</div>
+              <div class="branding-error" id="logo-error"></div>
+              <div class="branding-actions">
+                <button class="btn btn-primary" id="upload-logo-btn" onclick="uploadLogo()" disabled>
+                  Upload Logo
+                </button>
+                <button class="btn btn-secondary" id="remove-logo-btn" onclick="removeLogo()" style="display:none;">
+                  Remove Logo
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="settings-logo-text">Logo Text</label>
+          <div style="display:flex;gap:8px;align-items:flex-start;">
+            <input type="text" id="settings-logo-text" placeholder="SAFE21.io" maxlength="30" style="flex:1;" />
+            <button class="btn btn-primary" id="update-logo-text-btn" onclick="updateLogoText()" style="white-space:nowrap;flex-shrink:0;">
+              Update Logo Text
+            </button>
+          </div>
+          <div class="form-hint">Text shown next to the logo in the header (max 30 characters). Also visible publicly via /&lt;chain&gt;/info.</div>
+        </div>
+
+        <div id="branding-result" class="result-box"></div>
+      </div>
+
+    </div>
+
+    <!-- ===================== TRANSACTIONS ===================== -->
+    <div id="panel-transactions" class="panel">
+      <h2>Transaction <span>List</span></h2>
+
+      <div class="card">
+        <div class="card-title">Last 100 Transactions</div>
+
+        <div class="form-group" style="margin-bottom:16px;">
+          <label for="tx-filter-network">Filter by Network</label>
+          <select id="tx-filter-network" onchange="loadTransactions()">
+            <option value="">All networks</option>
+            <option value="bitcoin">Bitcoin</option>
+            <option value="testnet">Testnet</option>
+            <option value="testnet4">Testnet4</option>
+            <option value="signet">Signet</option>
+            <option value="regtest">Regtest</option>
+          </select>
+          <label style="display:inline-flex;align-items:center;gap:6px;margin-left:16px;font-size:12px;cursor:pointer;">
+            <input type="checkbox" id="tx-show-failed" onchange="loadTransactions()" checked />
+            Show failed
+          </label>
+        </div>
+
+        <div id="tx-list-container">
+          <div style="text-align:center;padding:20px;color:var(--text-muted);">Select a network to load transactions.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== BACKUP ===================== -->
+    <div id="panel-backup" class="panel">
+      <h2>Backup <span>&amp; Restore</span></h2>
+
+      <!-- Automatic Backups info -->
+      <div class="card">
+        <div class="card-title">Automatic Backups</div>
+        <div style="font-size:13px; color:var(--text-muted); margin-bottom:14px; line-height:1.7;">
+          <p style="margin-bottom:8px;">
+            This app creates an automatic backup of the database every
+            <strong style="color:var(--text);">Sunday</strong>
+            at approximately <strong style="color:var(--text);">02:00</strong>
+            (server local time).
+          </p>
+          <p style="margin-bottom:8px;">
+            Backup files are named
+            <code style="font-family:var(--mono); color:var(--accent);">bal-YYYYMMDD.db</code>
+            and stored in the configured backup directory.
+          </p>
+          <p>
+            Up to <strong style="color:var(--text);">12 backups</strong>
+            are retained (one per week for 12 weeks). The oldest backup is
+            automatically removed when a new one is created.
+          </p>
+        </div>
+      </div>
+
+      <!-- Backup storage path config -->
+      <div class="card">
+        <div class="card-title">Backup Storage Location</div>
+        <div class="form-group">
+          <label for="backup-path-input">Directory Path</label>
+          <input type="text" id="backup-path-input" placeholder="/data/backup" />
+          <div class="form-hint">
+            Path to store automatic backups. Leave empty for default
+            (<code>&lt;data-dir&gt;/backup</code>).
+            To use an external drive, enter its mount path
+            (e.g. <code>/mnt/external/backups</code>).
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="saveBackupConfig()">
+          Save Path
+        </button>
+        <div id="backup-config-result" class="result-box"></div>
+      </div>
+
+      <!-- Restore from automatic backup -->
+      <div class="card">
+        <div class="card-title">Restore from Automatic Backup</div>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+          Select a saved automatic backup to merge its transactions into the
+          current database. Only new transactions are added — existing ones
+          are preserved. The database is not replaced.
+        </p>
+        <div class="form-group">
+          <label for="backup-file-select">Available Backups</label>
+          <select id="backup-file-select" style="margin-bottom:10px;">
+            <option value="">— Select a backup —</option>
+          </select>
+          <div id="backups-list-empty" style="font-size:13px; color:var(--text-muted); display:none;">
+            No automatic backups found yet. The first backup will be created next Sunday at 02:00.
+          </div>
+        </div>
+        <button class="btn btn-primary" id="restore-btn" onclick="restoreSelectedBackup()" disabled>
+          Restore
+        </button>
+        <div id="restore-result" class="result-box"></div>
+      </div>
+
+      <!-- Download database backup -->
+      <div class="card">
+        <div class="card-title">Download Database Backup</div>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+          Download the complete SQLite database including all transactions,
+          settings, and keys.
+        </p>
+        <button class="btn btn-secondary" onclick="downloadBackup()">
+          <span>⬇️</span> Download Backup
+        </button>
+      </div>
+
+      <!-- Import from uploaded backup -->
+      <div class="card">
+        <div class="card-title">Import Transactions from Backup</div>
+        <p style="font-size:13px; color:var(--text-muted); margin-bottom:12px;">
+          Upload a previously downloaded database to merge its transactions.
+          Only new transactions are added — existing ones are preserved.
+          The database is not replaced.
+        </p>
+        <input type="file" id="merge-file-input" accept=".db" style="display:none" onchange="mergeBackup(this)" />
+        <button class="btn btn-secondary" onclick="document.getElementById('merge-file-input').click()">
+          <span>📂</span> Choose Backup File
+        </button>
+        <div id="merge-result" class="result-box"></div>
+      </div>
+    </div>
+
+    <!-- ===================== TX DETAIL MODAL ===================== -->
+    <div class="modal-overlay" id="detail-modal">
+      <div class="modal-box">
+        <h3>Transaction <span>Detail</span></h3>
+        <div id="detail-content">
+          <div style="text-align:center;padding:20px;"><span class="spinner"></span> Loading...</div>
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="hideTxDetail()">Close</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ===================== DANGER CONFIRMATION MODAL ===================== -->
+    <div class="modal-overlay" id="confirm-modal">
+      <div class="modal-box">
+        <span class="warning-icon">⚠️</span>
+        <h3>DANGER — Confirm Changes</h3>
+        <p>
+          Changing the payment address or fee affects <strong>all future transactions</strong>
+          submitted to this server. Transactions already stored are <strong>not</strong> affected.
+        </p>
+        <p>
+          If you change the address, new transactions will pay the fee to the new address.
+          Old transactions already waiting will still pay to the old address.
+        </p>
+        <p style="color: var(--error); font-weight: 600;">
+          Make sure the new address is correct. This action cannot be undone via the UI.
+        </p>
+        <div class="info-row" style="border-bottom: none;">
+          <span class="info-key">New Address</span>
+          <span class="info-val" id="confirm-addr" style="font-size: 11px;">—</span>
+        </div>
+        <div class="info-row" style="border-bottom: none;">
+          <span class="info-key">New Fee</span>
+          <span class="info-val" id="confirm-fee">—</span>
+        </div>
+        <div class="info-row" style="border-bottom: none;">
+          <span class="info-key">Description</span>
+          <span class="info-val" id="confirm-info">—</span>
+        </div>
+        <div style="margin-top: 16px;">
+          <label>Type <strong>"Ok, I'm secure of this"</strong> to confirm:</label>
+          <input type="text" id="confirm-input" placeholder="Ok, I'm secure of this"
+                 oninput="toggleConfirmBtn()" autocomplete="off" />
+        </div>
+        <div class="modal-actions">
+          <button class="btn btn-secondary" onclick="hideSettingsConfirm()">Cancel</button>
+          <button class="btn btn-danger" id="confirm-btn" disabled onclick="confirmSettings()">
+            Confirm
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+/* =============================================================================
+   Bitcoin After Life — Dashboard JavaScript
+   All API calls go to /api/* which nginx proxies to bal-server:9137
+   ============================================================================= */
+
+// --- State ---
+const NETWORKS = ['bitcoin', 'testnet', 'testnet4', 'signet', 'regtest'];
+let activeNetwork = 'bitcoin';
+let enabledNetworks = [];
+
+/* ---- Navigation ---- */
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  const btns = document.querySelectorAll('.nav-btn');
+  const idx = ['dashboard','submit','search','transactions','backup','settings'].indexOf(name);
+  if (idx >= 0) btns[idx].classList.add('active');
+  if (name === 'backup') { loadBackupsList(); loadBackupConfig(); }
+  sessionStorage.setItem('activeTab', name);
+}
+
+/* ---- Utility: copy element text to clipboard ---- */
+function copyText(id) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  navigator.clipboard.writeText(el.textContent.trim())
+    .then(() => {
+      const old = el.parentElement.querySelector('.copy-btn');
+      if (old) { old.textContent = '\u2713'; setTimeout(() => old.textContent = 'Copy', 1500); }
+    });
+}
+
+/* ---- Utility: format satoshis nicely ---- */
+function formatSats(sats) {
+  const n = parseInt(sats, 10);
+  if (isNaN(n)) return sats;
+  if (n >= 100000000) return (n / 1e8).toFixed(4) + ' BTC';
+  return n.toLocaleString() + ' sat';
+}
+
+/* ---- Utility: decode status number to label ---- */
+function statusLabel(s) {
+  const map = { '0': 'waiting', '1': 'sent', '2': 'failed' };
+  return map[String(s)] || 'unknown';
+}
+
+/* ---- Utility: short txid with ellipsis ---- */
+function shortTxid(txid) {
+  if (!txid || txid.length <= 16) return txid || '—';
+  const n = Math.floor(txid.length / 4);
+  return txid.slice(0, n) + '\u2026' + txid.slice(-n);
+}
+
+/* ---- Utility: blockchain confirmation badge ---- */
+function confirmBadge(tx) {
+  if (tx.status === 0) return '\u2014';
+  if (tx.status === 2) {
+    return '<span class="status-badge other-will" title="Other competing executors already had this TX in the Bitcoin After Life plugin — this executor arrived late and the TX was double-spent"><span class="dot"></span>OTHER EXECUTORS</span>';
+  }
+  const c = parseInt(tx.confirmations, 10);
+  if (c > 0) return '<span class="status-badge confirmed"><span class="dot"></span>YES</span>';
+  return '<span class="status-badge mempool"><span class="dot"></span>MEMPOOL</span>';
+}
+
+/* ---- Utility: format locktime (block height or timestamp) ---- */
+function formatLocktime(lt) {
+  if (lt === null || lt === undefined || lt === '') return '\u2014';
+  const n = parseInt(lt, 10);
+  if (isNaN(n)) return lt;
+  if (n > 500000000) {
+    const d = new Date(n * 1000);
+    const y = d.getUTCFullYear();
+    const m = String(d.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(d.getUTCDate()).padStart(2, '0');
+    const h = String(d.getUTCHours()).padStart(2, '0');
+    const min = String(d.getUTCMinutes()).padStart(2, '0');
+    return y + '-' + m + '-' + day + ' ' + h + ':' + min + ' UTC';
+  }
+  return n.toLocaleString() + ' (block)';
+}
+
+/* ---- Fetch server version ---- */
+async function loadVersion() {
+  try {
+    const r = await fetch('/api/version');
+    const v = await r.text();
+    document.getElementById('srv-version').textContent = 'v' + v.trim();
+    document.getElementById('srv-status').innerHTML =
+      '<span class="status-badge sent"><span class="dot"></span>Online</span>';
+  } catch (e) {
+    document.getElementById('srv-version').textContent = 'Unreachable';
+    document.getElementById('srv-status').innerHTML =
+      '<span class="status-badge failed"><span class="dot"></span>Offline</span>';
+  }
+  try {
+    const r = await fetch('/api/settings');
+    const j = await r.json();
+    document.getElementById('srv-description').textContent = j.info || '—';
+  } catch (_) {}
+}
+
+/* ---- Probe which networks are enabled ---- */
+async function probeNetworks() {
+  const chips = document.getElementById('net-chips');
+  chips.innerHTML = '';
+  enabledNetworks = [];
+
+  for (const net of NETWORKS) {
+    try {
+      const r = await fetch('/api/' + net + '/info');
+      if (!r.ok) continue;
+      const j = await r.json();
+      // A network is "enabled" when it returns a non-empty address
+      if (!j.address || j.address === '') continue;
+      enabledNetworks.push(net);
+      const chip = document.createElement('button');
+      chip.className = 'net-chip' + (net === 'bitcoin' ? ' active' : '');
+      chip.id = 'chip-' + net;
+      chip.textContent = net;
+      chip.onclick = () => selectNetwork(net);
+      chips.appendChild(chip);
+    } catch (_) { /* network not reachable — skip */ }
+  }
+
+  if (enabledNetworks.length > 0) {
+    selectNetwork(enabledNetworks[0]);
+  } else {
+    document.getElementById('active-net-label').textContent = 'no networks enabled';
+    document.getElementById('ni-address').textContent = 'No networks configured';
+  }
+}
+
+/* ---- Switch active network and reload its data ---- */
+async function selectNetwork(net) {
+  activeNetwork = net;
+  document.querySelectorAll('.net-chip').forEach(c => c.classList.remove('active'));
+  const chip = document.getElementById('chip-' + net);
+  if (chip) chip.classList.add('active');
+  document.getElementById('active-net-label').textContent = net;
+
+  // Load info
+  try {
+    const r = await fetch('/api/' + net + '/info');
+    const j = await r.json();
+    document.getElementById('ni-address').textContent = j.address || '—';
+    document.getElementById('ni-fee').textContent = formatSats(j.base_fee) + ' minimum';
+    document.getElementById('ni-chain').textContent = j.chain || net;
+
+    // Fetch on-chain balance from Blockstream API
+    const addr = j.address;
+    if (addr && addr.startsWith('bc1')) {
+      fetchBalance(addr);
+    } else {
+      document.getElementById('ni-balance').textContent = '—';
+    }
+  } catch (e) {
+    document.getElementById('ni-address').textContent = 'Error loading info';
+  }
+
+  // Load stats
+  try {
+    const r = await fetch('/api/' + net + '/stats');
+    const j = await r.json();
+    if (j && j.length > 0) {
+      const s = j[0];
+      document.getElementById('s-total').textContent        = s.totals        ?? '—';
+      document.getElementById('s-waiting').textContent      = s.waiting       ?? '—';
+      document.getElementById('s-sent').textContent         = s.sent          ?? '—';
+      document.getElementById('s-failed').textContent       = s.failed        ?? '—';
+      const conf = parseInt(s.confirmed_profit) || 0;
+      const missed = parseInt(s.missed_profit)   || 0;
+      const waiting = parseInt(s.waiting_profit) || 0;
+      const mempool = parseInt(s.mempool_profit) || 0;
+      document.getElementById('s-confirmed-profit').textContent     = formatSats(conf);
+      document.getElementById('s-total-executor-profit').textContent = formatSats(conf + missed);
+      document.getElementById('s-protocol-profit').textContent      = formatSats(waiting + mempool);
+      document.getElementById('s-total-profit').textContent         = formatSats(conf + missed + waiting + mempool);
+    } else {
+      ['s-total','s-waiting','s-sent','s-failed','s-confirmed-profit','s-total-executor-profit','s-protocol-profit','s-total-profit'].forEach(id => {
+        document.getElementById(id).textContent = '0';
+      });
+    }
+  } catch (e) {
+    ['s-total','s-waiting','s-sent','s-failed','s-confirmed-profit','s-total-executor-profit','s-protocol-profit','s-total-profit'].forEach(id => {
+      document.getElementById(id).textContent = '?';
+    });
+  }
+}
+
+/* ---- Load Tor address ---- */
+async function loadTorAddress() {
+  try {
+    const r = await fetch('/tor-address.json');
+    const j = await r.json();
+    if (j.address && j.address !== '') {
+      document.getElementById('tor-addr').textContent = j.address + ':9137';
+    } else {
+      document.getElementById('tor-addr').textContent = 'Not available (Tor not active)';
+    }
+  } catch (_) {
+    document.getElementById('tor-addr').textContent = 'Not available (Tor not active)';
+  }
+}
+
+/* ---- Check ZMQ status ---- */
+async function checkZmqStatus() {
+  // Hide all banners first
+  ['zmq-ok', 'zmq-restart', 'zmq-warning'].forEach(id => {
+    document.getElementById(id).style.display = 'none';
+  });
+  try {
+    const r = await fetch('/zmq-status.json');
+    const j = await r.json();
+    switch (j.status) {
+      case 'ok':
+        // Show subtle success banner — ZMQ is working
+        document.getElementById('zmq-ok').style.display = 'flex';
+        break;
+      case 'restart_required':
+        // We added the config automatically — user needs to restart Bitcoin Core
+        document.getElementById('zmq-restart').style.display = 'flex';
+        break;
+      case 'error':
+      case 'pending':
+        // Port not open, config not found, or still waiting on pusher startup
+        document.getElementById('zmq-warning').style.display = 'flex';
+        break;
+      default:
+        // Unknown state — show generic warning
+        document.getElementById('zmq-warning').style.display = 'flex';
+    }
+  } catch (_) {
+    // File not found yet (pusher hasn't written it) — show nothing
+  }
+}
+
+/* ---- Fetch on-chain balance from Blockstream API ---- */
+async function fetchBalance(address) {
+  const el = document.getElementById('ni-balance');
+  el.textContent = 'Loading…';
+  try {
+    const r = await fetch('https://blockstream.info/api/address/' + address);
+    const j = await r.json();
+    const funded = j.chain_stats.funded_txo_sum || 0;
+    const spent  = j.chain_stats.spent_txo_sum  || 0;
+    const balance = funded - spent;
+    el.textContent = formatSats(balance);
+  } catch (_) {
+    el.textContent = 'Unreachable';
+  }
+}
+
+/* ---- Submit transaction ---- */
+async function submitTx() {
+  const hex = document.getElementById('tx-hex-input').value.trim();
+  const net = document.getElementById('submit-network').value;
+  const btn = document.getElementById('submit-btn');
+  const result = document.getElementById('submit-result');
+
+  if (!hex) {
+    showResult(result, 'Please paste a raw transaction in hex format.', 'err');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Submitting…';
+  result.className = 'result-box';
+
+  try {
+    const r = await fetch('/api/' + net + '/pushtxs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: hex
+    });
+    const text = await r.text();
+
+    if (r.ok && text === 'thx') {
+      showResult(result, '\u2713 Transaction accepted and stored.\nIt will be broadcast when its locktime is reached.', 'ok');
+      document.getElementById('tx-hex-input').value = '';
+    } else if (text === 'already present') {
+      showResult(result, 'ℹ️ This transaction is already stored on this server.', 'ok');
+    } else {
+      showResult(result, '✗ Server rejected the transaction:\n' + text, 'err');
+    }
+  } catch (e) {
+    showResult(result, '✗ Network error: ' + e.message, 'err');
+  }
+
+  btn.disabled = false;
+  btn.innerHTML = '🔒 Submit &amp; Lock';
+}
+
+function showResult(el, text, cls) {
+  el.textContent = text;
+  el.className = 'result-box visible ' + cls;
+}
+
+/* ---- Search transaction ---- */
+async function searchTx() {
+  const txid = document.getElementById('search-txid').value.trim();
+  const resultEl = document.getElementById('tx-result');
+  const notFoundEl = document.getElementById('tx-not-found');
+
+  resultEl.classList.remove('visible');
+  notFoundEl.style.display = 'none';
+
+  if (!txid || txid.length < 10) {
+    notFoundEl.style.display = 'flex';
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/searchtx', {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: txid
+    });
+
+    if (!r.ok) { notFoundEl.style.display = 'flex'; return; }
+    const j = await r.json();
+    if (!j || !j.status) { notFoundEl.style.display = 'flex'; return; }
+
+    const sl = statusLabel(j.status);
+    const badge = `<span class="status-badge ${sl}"><span class="dot"></span>${sl.toUpperCase()}</span>`;
+    document.getElementById('tx-status-badge').innerHTML = badge;
+    document.getElementById('tx-status-text').textContent = sl + ' (code: ' + j.status + ')';
+    document.getElementById('tx-address').textContent = j.our_address || '—';
+    document.getElementById('tx-fee').textContent     = j.our_fees ? formatSats(j.our_fees) : '—';
+
+    // Format nanosecond timestamp into a readable date
+    if (j.time) {
+      const ms = parseInt(j.time) / 1e6;
+      document.getElementById('tx-time').textContent = new Date(ms).toLocaleString();
+    } else {
+      document.getElementById('tx-time').textContent = '—';
+    }
+
+    document.getElementById('tx-hex').textContent = j.tx || '—';
+    resultEl.classList.add('visible');
+  } catch (e) {
+    notFoundEl.style.display = 'flex';
+  }
+}
+
+/* ---- Enter key support for search input ---- */
+document.getElementById('search-txid').addEventListener('keydown', e => {
+  if (e.key === 'Enter') searchTx();
+});
+
+/* ===== Header branding update ===== */
+async function updateHeaderBranding() {
+  try {
+    const r = await fetch('/api/settings');
+    const j = await r.json();
+    if (j.logo_text) {
+      const parts = j.logo_text.split(' - ');
+      document.getElementById('header-logo-text').textContent = parts[0] || j.logo_text;
+      if (parts[1]) {
+        document.getElementById('header-logo-sub').textContent = '\u2014 ' + parts[1];
+        document.getElementById('header-logo-sub').style.display = '';
+      } else {
+        document.getElementById('header-logo-sub').style.display = 'none';
+      }
+    } else {
+      document.getElementById('header-logo-text').textContent = 'Bitcoin After Life';
+      document.getElementById('header-logo-sub').textContent = '\u2014 Will Executor';
+      document.getElementById('header-logo-sub').style.display = '';
+    }
+    if (j.has_logo) {
+      document.getElementById('header-logo-img').src = '/api/custom-logo?' + Date.now();
+      document.getElementById('remove-logo-btn').style.display = '';
+    } else {
+      document.getElementById('header-logo-img').src = '/icon.svg';
+      document.getElementById('remove-logo-btn').style.display = 'none';
+    }
+  } catch (_) {}
+}
+
+/* ===== Settings ===== */
+async function loadSettings() {
+  try {
+    const r = await fetch('/api/settings');
+    const j = await r.json();
+    if (j.address) document.getElementById('settings-address').value = j.address;
+    if (j.fee) document.getElementById('settings-fee').value = j.fee;
+    if (j.info) document.getElementById('settings-info').value = j.info;
+    if (j.logo_text) document.getElementById('settings-logo-text').value = j.logo_text;
+    if (j.has_logo) {
+      document.getElementById('logo-preview-img').src = '/api/custom-logo?' + Date.now();
+      document.getElementById('logo-preview-img').style.display = '';
+      document.getElementById('logo-preview').querySelector('.placeholder').style.display = 'none';
+      document.getElementById('remove-logo-btn').style.display = '';
+    }
+  } catch (_) {}
+}
+
+/* ===== Logo upload ===== */
+let pendingLogoFile = null;
+
+function validateLogo(input) {
+  const errorEl = document.getElementById('logo-error');
+  errorEl.classList.remove('visible');
+  errorEl.textContent = '';
+  const file = input.files[0];
+  if (!file) {
+    document.getElementById('upload-logo-btn').disabled = true;
+    pendingLogoFile = null;
+    return;
+  }
+
+  // Validate format
+  const validTypes = ['image/png', 'image/svg+xml', 'image/jpeg', 'image/webp'];
+  if (!validTypes.includes(file.type)) {
+    errorEl.textContent = 'Unsupported format. Use PNG, SVG, JPEG, or WebP.';
+    errorEl.classList.add('visible');
+    document.getElementById('upload-logo-btn').disabled = true;
+    pendingLogoFile = null;
+    return;
+  }
+
+  // Validate size
+  if (file.size > 204800) {
+    errorEl.textContent = 'File too large. Maximum 200KB.';
+    errorEl.classList.add('visible');
+    document.getElementById('upload-logo-btn').disabled = true;
+    pendingLogoFile = null;
+    return;
+  }
+
+  // Validate dimensions via Image element
+  const img = new Image();
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    img.onload = function() {
+      const w = img.naturalWidth;
+      const h = img.naturalHeight;
+      if (w < 32 || w > 1024 || h < 32 || h > 1024) {
+        errorEl.textContent = 'Image must be 32\u20131024 pixels wide and tall.';
+        errorEl.classList.add('visible');
+        document.getElementById('upload-logo-btn').disabled = true;
+        pendingLogoFile = null;
+        return;
+      }
+      // Show preview
+      document.getElementById('logo-preview-img').src = reader.result;
+      document.getElementById('logo-preview-img').style.display = '';
+      document.getElementById('logo-preview').querySelector('.placeholder').style.display = 'none';
+      document.getElementById('upload-logo-btn').disabled = false;
+      pendingLogoFile = file;
+    };
+    img.src = reader.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+async function uploadLogo() {
+  if (!pendingLogoFile) return;
+  const btn = document.getElementById('upload-logo-btn');
+  const result = document.getElementById('branding-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Uploading\u2026';
+  result.className = 'result-box';
+  try {
+    const r = await fetch('/api/upload-logo', {
+      method: 'POST',
+      body: pendingLogoFile
+    });
+    if (r.ok) {
+      showResult(result, '\u2713 Logo uploaded successfully.', 'ok');
+      pendingLogoFile = null;
+      document.getElementById('logo-file-input').value = '';
+      document.getElementById('remove-logo-btn').style.display = '';
+      await updateHeaderBranding();
+    } else {
+      const text = await r.text();
+      showResult(result, '\u2717 Error: ' + text, 'err');
+    }
+  } catch (e) {
+    showResult(result, '\u2717 Network error: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'Upload Logo';
+}
+
+async function removeLogo() {
+  const btn = document.getElementById('remove-logo-btn');
+  const result = document.getElementById('branding-result');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Removing\u2026';
+  result.className = 'result-box';
+  try {
+    const r = await fetch('/api/remove-logo', { method: 'POST' });
+    if (r.ok) {
+      showResult(result, '\u2713 Logo removed.', 'ok');
+      document.getElementById('remove-logo-btn').style.display = 'none';
+      document.getElementById('logo-preview-img').style.display = 'none';
+      document.getElementById('logo-preview').querySelector('.placeholder').style.display = 'flex';
+      document.getElementById('logo-preview-img').src = '';
+      await updateHeaderBranding();
+    } else {
+      const text = await r.text();
+      showResult(result, '\u2717 Error: ' + text, 'err');
+    }
+  } catch (e) {
+    showResult(result, '\u2717 Network error: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'Remove Logo';
+}
+
+async function updateLogoText() {
+  const btn = document.getElementById('update-logo-text-btn');
+  const input = document.getElementById('settings-logo-text');
+  const result = document.getElementById('branding-result');
+  const newText = input.value.trim();
+  if (newText.length > 30) {
+    showResult(result, 'Logo text must be 30 characters or fewer.', 'err');
+    return;
+  }
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving\u2026';
+  result.className = 'result-box';
+  try {
+    const r0 = await fetch('/api/settings');
+    const cur = await r0.json();
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        address: cur.address || '',
+        fee: cur.fee || 22200,
+        info: cur.info || '',
+        logo_text: newText
+      })
+    });
+    if (r.ok) {
+      showResult(result, '\u2713 Logo text updated.', 'ok');
+      await updateHeaderBranding();
+    } else {
+      const text = await r.text();
+      showResult(result, '\u2717 Error: ' + text, 'err');
+    }
+  } catch (e) {
+    showResult(result, '\u2717 Network error: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'Update Logo Text';
+}
+
+function saveSettings() {
+  const addr = document.getElementById('settings-address').value.trim();
+  const fee = document.getElementById('settings-fee').value.trim();
+  const info = document.getElementById('settings-info').value.trim();
+  if (!addr || addr.length < 10) {
+    showSettingsMsg('Enter a valid Bitcoin address.', 'err');
+    return;
+  }
+  const feeNum = parseInt(fee, 10);
+  if (isNaN(feeNum) || feeNum < 1) {
+    showSettingsMsg('Enter a valid fee in satoshis (minimum 1).', 'err');
+    return;
+  }
+  document.getElementById('confirm-addr').textContent = addr;
+  document.getElementById('confirm-fee').textContent = feeNum.toLocaleString() + ' sat';
+  document.getElementById('confirm-info').textContent = info || '(unchanged)';
+  document.getElementById('confirm-modal').classList.add('visible');
+  document.getElementById('confirm-input').value = '';
+  document.getElementById('confirm-btn').disabled = true;
+  document.getElementById('confirm-input').focus();
+}
+
+function toggleConfirmBtn() {
+  const input = document.getElementById('confirm-input').value;
+  const ok = input.toLowerCase() === "ok, i'm secure of this";
+  document.getElementById('confirm-btn').disabled = !ok;
+}
+
+function hideSettingsConfirm() {
+  document.getElementById('confirm-modal').classList.remove('visible');
+  document.getElementById('confirm-input').value = '';
+}
+
+async function confirmSettings() {
+  const addr = document.getElementById('settings-address').value.trim();
+  const fee = parseInt(document.getElementById('settings-fee').value, 10);
+  const info = document.getElementById('settings-info').value.trim();
+  const logoText = document.getElementById('settings-logo-text').value.trim();
+  hideSettingsConfirm();
+  const btn = document.getElementById('settings-save-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span class="spinner"></span> Saving\u2026';
+  try {
+    const r = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: addr, fee: fee, info: info, logo_text: logoText })
+    });
+    if (r.ok) {
+      showSettingsMsg('\u2713 Settings saved.', 'ok');
+      await updateHeaderBranding();
+    } else {
+      const text = await r.text();
+      showSettingsMsg('\u2717 Error: ' + text, 'err');
+    }
+  } catch (e) {
+    showSettingsMsg('\u2717 Network error: ' + e.message, 'err');
+  }
+  btn.disabled = false;
+  btn.innerHTML = 'Save Changes';
+}
+
+function showSettingsMsg(text, cls) {
+  const el = document.getElementById('settings-result');
+  el.textContent = text;
+  el.className = 'result-box visible ' + cls;
+}
+
+/* ---- Load transaction list ---- */
+async function loadTransactions() {
+  const container = document.getElementById('tx-list-container');
+  const network = document.getElementById('tx-filter-network').value;
+  const showFailed = document.getElementById('tx-show-failed').checked;
+  const params = [];
+  if (network) params.push('network=' + encodeURIComponent(network));
+  if (showFailed) params.push('show_failed=1');
+  const url = '/api/txlist' + (params.length ? '?' + params.join('&') : '');
+  container.innerHTML = '<div style="text-align:center;padding:20px;"><span class="spinner"></span> Loading...</div>';
+  try {
+    const r = await fetch(url);
+    const txs = await r.json();
+    if (!txs || txs.length === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">No transactions found.</div>';
+      return;
+    }
+    let html = '<table class="tx-table"><thead><tr>' +
+      '<th>TXID</th><th>Network</th><th class="right">Server Fee</th><th class="center">Status</th><th class="center">Confirmed</th><th class="right">Locktime</th>' +
+      '</tr></thead><tbody>';
+    const renderTx = (tx) => {
+      const sl = statusLabel(tx.status);
+      const badge = '<span class="status-badge ' + sl + '" style="font-size:10px;"><span class="dot"></span>' + sl.toUpperCase() + '</span>';
+      html += '<tr onclick="showTxDetail(\'' + tx.txid + '\')">' +
+        '<td class="mono" title="' + (tx.txid || '') + '">' + shortTxid(tx.txid) + '</td>' +
+        '<td>' + (tx.network || '—') + '</td>' +
+        '<td class="right">' + formatSats(tx.our_fees || 0) + '</td>' +
+        '<td class="center">' + badge + '</td>' +
+        '<td class="center">' + confirmBadge(tx) + '</td>' +
+        '<td class="right mono">' + formatLocktime(tx.locktime) + '</td>' +
+        '</tr>';
+    };
+    for (const tx of txs) renderTx(tx);
+    html += '</tbody></table>';
+    container.innerHTML = html;
+  } catch (e) {
+    container.innerHTML = '<div class="alert error" style="display:flex;">Error loading transactions: ' + e.message + '</div>';
+  }
+}
+
+/* ---- Show transaction detail modal ---- */
+async function showTxDetail(txid) {
+  const modal = document.getElementById('detail-modal');
+  const content = document.getElementById('detail-content');
+  modal.classList.add('visible');
+  content.innerHTML = '<div style="text-align:center;padding:20px;"><span class="spinner"></span> Loading...</div>';
+  try {
+    const r = await fetch('/api/txdetail?txid=' + encodeURIComponent(txid));
+    const tx = await r.json();
+    if (!tx || !tx.txid) {
+      content.innerHTML = '<div class="alert error" style="display:flex;">Transaction not found.</div>';
+      return;
+    }
+    const sl = statusLabel(tx.status);
+    const badge = '<span class="status-badge ' + sl + '" style="font-size:11px;"><span class="dot"></span>' + sl.toUpperCase() + '</span>';
+    let html =
+      '<div class="detail-section">' +
+      '<div class="detail-row"><span class="detail-key">TXID</span><span class="detail-val mono" style="font-size:11px;word-break:break-all;">' + (tx.txid || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Network</span><span class="detail-val">' + (tx.network || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Server Fee</span><span class="detail-val">' + formatSats(tx.our_fees || 0) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Total Output</span><span class="detail-val">' + formatSats(tx.total_output || 0) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Network Fee</span><span class="detail-val">' + (tx.network_fees ? formatSats(tx.network_fees) : '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Address</span><span class="detail-val">' + (tx.our_address || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Status</span><span class="detail-val">' + badge + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Confirmed</span><span class="detail-val">' + confirmBadge(tx) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Locktime</span><span class="detail-val">' + formatLocktime(tx.locktime) + ' <span class="muted">' + (parseInt(tx.locktime,10) < 500000000 ? 'Block Number ' + Number(tx.locktime).toLocaleString() : '(' + tx.locktime + ')') + '</span></span></div>' +
+      '<div class="detail-row"><span class="detail-key">Created</span><span class="detail-val">' + (tx.date_creation || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Updated</span><span class="detail-val">' + (tx.date_update || '—') + '</span></div>';
+    if (tx.status === 2) {
+      html += '<div class="detail-row"><span class="detail-key">&nbsp;</span>' +
+        '<span class="detail-val" style="color:var(--error);font-size:11px;">' +
+        '\u26A0 Other competing executors already claimed this TX via the Bitcoin After Life plugin. ' +
+        'This executor arrived too late.</span></div>';
+    }
+    if (tx.push_err) {
+      html += '<div class="detail-row"><span class="detail-key">Error</span><span class="detail-val" style="color:var(--error);">' + tx.push_err + '</span></div>';
+    }
+    if (tx.inputs && tx.inputs.length > 0) {
+      html += '<div class="detail-section-title" style="margin-top:10px;">Inputs (' + tx.inputs.length + ')</div>' +
+        '<table class="tx-table"><thead><tr><th>TXID</th><th class="right">Vout</th></tr></thead><tbody>';
+      for (const inp of tx.inputs) {
+        const short = inp.in_txid && inp.in_txid.length > 20 ? inp.in_txid.slice(0, 20) + '\u2026' : (inp.in_txid || '—');
+        html += '<tr><td class="mono" title="' + (inp.in_txid || '') + '">' + short + '</td><td class="right mono">' + (inp.in_vout || '—') + '</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+    if (tx.outputs && tx.outputs.length > 0) {
+      html += '<div class="detail-section-title" style="margin-top:10px;">Outputs (' + tx.outputs.length + ')</div>' +
+        '<table class="tx-table"><thead><tr><th class="right">Vout</th><th>Address</th><th class="right">Amount</th></tr></thead><tbody>';
+      for (const out of tx.outputs) {
+        const addr = out.address || '—';
+        const scriptShort = out.script_pubkey ? out.script_pubkey.slice(0, 40) + '\u2026' : '—';
+        html += '<tr><td class="right mono">' + (out.vout || '—') + '</td><td class="mono" style="font-size:10px;" title="' + (out.script_pubkey || '') + '">' + addr + '</td><td class="right mono">' + (out.amount || '0') + ' sat</td></tr>';
+      }
+      html += '</tbody></table>';
+    }
+    html += '<div class="detail-section-title" style="margin-top:10px;">Raw Transaction Hex</div>' +
+      '<div class="detail-hex">' + (tx.tx || '—') + '</div>';
+    content.innerHTML = html;
+  } catch (e) {
+    content.innerHTML = '<div class="alert error" style="display:flex;">Error: ' + e.message + '</div>';
+  }
+}
+
+function hideTxDetail() {
+  document.getElementById('detail-modal').classList.remove('visible');
+}
+
+/* ---- Public-domain check: hide Settings on we.safe21.io ---- */
+(function checkPublicDomain() {
+  const host = window.location.hostname;
+  if (host === 'we.safe21.io' || host.endsWith('.safe21.io') || host.endsWith('.onion')) {
+    document.getElementById('nav-transactions').style.display = 'none';
+    document.getElementById('nav-backup').style.display = 'none';
+    document.getElementById('nav-settings').style.display = 'none';
+    if (window.location.hash === '#settings' || window.location.hash === '#transactions' || window.location.hash === '#backup') {
+      window.location.hash = '#dashboard';
+    }
+  } else {
+    document.getElementById('nav-transactions').style.display = '';
+    document.getElementById('nav-backup').style.display = '';
+    document.getElementById('nav-settings').style.display = '';
+  }
+})();
+
+/* ===== Backup & Restore ===== */
+async function downloadBackup() {
+  try {
+    const r = await fetch('/api/backup');
+    if (!r.ok) throw new Error('Server returned ' + r.status);
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'bal-backup-' + new Date().toISOString().slice(0, 10) + '.db';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  } catch (e) {
+    showSettingsMsg('Backup download failed: ' + e.message, 'err');
+  }
+}
+
+async function mergeBackup(input) {
+  const file = input.files[0];
+  if (!file) return;
+  const result = document.getElementById('merge-result');
+  result.className = 'result-box visible';
+  result.textContent = 'Uploading and merging...';
+  try {
+    const r = await fetch('/api/merge', {
+      method: 'POST',
+      body: file
+    });
+    const j = await r.json();
+    if (r.ok) {
+      result.className = 'result-box visible ok';
+      result.textContent = 'Merge complete: ' + j.merged + ' new transaction(s) imported, ' + j.skipped + ' already present. Total: ' + j.total + ' transaction(s) in database.';
+    } else {
+      result.className = 'result-box visible err';
+      result.textContent = 'Merge failed: ' + (j.error || r.statusText);
+    }
+  } catch (e) {
+    result.className = 'result-box visible err';
+    result.textContent = 'Merge error: ' + e.message;
+  }
+  input.value = '';
+}
+
+/* ===== Automatic Backups List & Restore ===== */
+async function loadBackupsList() {
+  const sel = document.getElementById('backup-file-select');
+  const emptyMsg = document.getElementById('backups-list-empty');
+  const restoreBtn = document.getElementById('restore-btn');
+  try {
+    const r = await fetch('/api/backups/list');
+    if (!r.ok) throw new Error('Server returned ' + r.status);
+    const backups = await r.json();
+    sel.innerHTML = '<option value="">— Select a backup —</option>';
+    if (!backups.length) {
+      emptyMsg.style.display = 'block';
+      sel.disabled = true;
+      restoreBtn.disabled = true;
+      return;
+    }
+    emptyMsg.style.display = 'none';
+    sel.disabled = false;
+    for (const b of backups) {
+      const date = new Date(b.modified * 1000);
+      const dateStr = date.toISOString().slice(0, 10) + ' ' + date.toISOString().slice(11, 16);
+      const sizeKB = Math.round(b.size / 1024);
+      const opt = document.createElement('option');
+      opt.value = b.filename;
+      opt.textContent = b.filename + '  —  ' + dateStr + '  ·  ' + sizeKB + ' KB';
+      sel.appendChild(opt);
+    }
+    restoreBtn.disabled = true;
+    sel.onchange = function() {
+      restoreBtn.disabled = !this.value;
+    };
+  } catch (e) {
+    sel.innerHTML = '<option value="">Error loading backups</option>';
+    sel.disabled = true;
+    restoreBtn.disabled = true;
+  }
+}
+
+async function restoreSelectedBackup() {
+  const sel = document.getElementById('backup-file-select');
+  const filename = sel.value;
+  if (!filename) return;
+  const result = document.getElementById('restore-result');
+  result.className = 'result-box visible';
+  result.textContent = 'Restoring from ' + filename + '…';
+  try {
+    const r = await fetch('/api/restore/' + encodeURIComponent(filename), {
+      method: 'POST'
+    });
+    const j = await r.json();
+    if (r.ok) {
+      result.className = 'result-box visible ok';
+      result.textContent = 'Restore complete: ' + j.merged + ' new transaction(s) imported from ' + j.filename + ', ' + j.skipped + ' already present. Total: ' + j.total + ' transaction(s) in database.';
+    } else {
+      result.className = 'result-box visible err';
+      result.textContent = 'Restore failed: ' + (j.error || r.statusText);
+    }
+  } catch (e) {
+    result.className = 'result-box visible err';
+    result.textContent = 'Restore error: ' + e.message;
+  }
+}
+
+/* ===== Backup Config (storage path) ===== */
+async function loadBackupConfig() {
+  try {
+    const r = await fetch('/api/backup/config');
+    if (!r.ok) return;
+    const j = await r.json();
+    document.getElementById('backup-path-input').value = j.backup_path || '';
+  } catch (_) {}
+}
+
+async function saveBackupConfig() {
+  const path = document.getElementById('backup-path-input').value.trim();
+  const result = document.getElementById('backup-config-result');
+  result.className = 'result-box visible';
+  result.textContent = 'Saving…';
+  try {
+    const r = await fetch('/api/backup/config', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ backup_path: path })
+    });
+    if (r.ok) {
+      result.className = 'result-box visible ok';
+      result.textContent = '\u2713 Backup storage path saved. Changes take effect for future backups.';
+      // Refresh the backup list (may show different files at the new location)
+      loadBackupsList();
+    } else {
+      const text = await r.text();
+      result.className = 'result-box visible err';
+      result.textContent = 'Error: ' + text;
+    }
+  } catch (e) {
+    result.className = 'result-box visible err';
+    result.textContent = 'Network error: ' + e.message;
+  }
+}
+
+/* ---- Bootstrap ---- */
+(async function init() {
+  const saved = sessionStorage.getItem('activeTab');
+  if (saved && saved !== 'dashboard') showPanel(saved);
+  await loadVersion();
+  await checkZmqStatus();
+  await probeNetworks();
+  await loadTorAddress();
+  await loadSettings();
+  await loadTransactions();
+  await updateHeaderBranding();
+})();
+</script>
+</body>
+</html>

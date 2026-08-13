@@ -1,0 +1,181 @@
+﻿# =============================================================================
+# Bitcoin After Life ÔÇö Umbrel App
+# =============================================================================
+# Three services:
+#   bal-server  ÔÇö HTTP API that receives and stores pre-signed transactions
+#   bal-pusher  ÔÇö Background daemon that watches blocks and broadcasts txs
+#   bal-ui      ÔÇö Nginx serving the React dashboard + API proxy to bal-server
+#
+# Shared storage:
+#   bal-data    ÔÇö Named volume for SQLite DB and Ed25519 keys (persistent)
+#
+# Network access to Bitcoin Core:
+#   Umbrel injects APP_BITCOIN_NODE_IP, APP_BITCOIN_RPC_PORT,
+#   APP_BITCOIN_RPC_USER, APP_BITCOIN_RPC_PASS as environment variables.
+# =============================================================================
+
+services:
+
+  # ---------------------------------------------------------------------------
+  # bal-server: HTTP API server (Rust/Hyper, port 9137 internal)
+  # Receives raw transactions, validates fee output, stores in SQLite.
+  # ---------------------------------------------------------------------------
+  bal-server:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.rust
+      # The same image is reused by bal-pusher via the shared build cache
+    image: bal-umbrel-rust:latest
+    container_name: bal-umbrel-server
+    restart: unless-stopped
+
+    command: ["/scripts/entrypoint-server.sh"]
+
+    environment:
+      # --- Database & keys ---
+      - BAL_SERVER_DB_FILE=/data/bal.db
+      - BAL_SERVER_PUB_KEY_PATH=/data/keys/public_key.pem
+
+      # --- Network binding: listen on all interfaces inside container ---
+      - BAL_SERVER_BIND_ADDRESS=0.0.0.0
+      - BAL_SERVER_BIND_PORT=9137
+
+      # --- Bitcoin mainnet payment config (user-configurable) ---
+      # Set BAL_BITCOIN_ADDRESS to a Bitcoin address or xpub to enable mainnet
+      - BAL_SERVER_BITCOIN_ADDRESS=${BAL_BITCOIN_ADDRESS:-}
+      - BAL_SERVER_BITCOIN_FIXED_FEE=${BAL_BITCOIN_FEE:-50000}
+
+      # --- Signet (optional) ---
+      - BAL_SERVER_SIGNET_ADDRESS=${BAL_SIGNET_ADDRESS:-}
+      - BAL_SERVER_SIGNET_FIXED_FEE=${BAL_SIGNET_FEE:-50000}
+
+      # --- Testnet (optional) ---
+      - BAL_SERVER_TESTNET_ADDRESS=${BAL_TESTNET_ADDRESS:-}
+      - BAL_SERVER_TESTNET_FIXED_FEE=${BAL_TESTNET_FEE:-50000}
+
+      # --- Regtest (optional) ---
+      - BAL_SERVER_REGTEST_ADDRESS=${BAL_REGTEST_ADDRESS:-}
+      - BAL_SERVER_REGTEST_FIXED_FEE=${BAL_REGTEST_FEE:-0}
+
+      # --- Logging level (trace|debug|info|warn|error) ---
+      - RUST_LOG=${BAL_LOG_LEVEL:-info}
+
+      # --- Expose stats endpoint publicly ---
+      - BAL_SERVER_EXPOSE_STATS=${BAL_EXPOSE_STATS:-true}
+
+    volumes:
+      # Persistent data: SQLite DB + Ed25519 keys
+      - ${APP_DATA_DIR:-.}/data:/data
+      # Scripts are embedded in the image but can be overridden here for dev
+      - ${APP_DATA_DIR:-.}/scripts:/scripts-override:ro
+
+    networks:
+      - bal-net
+
+    # No external port needed ÔÇö bal-ui proxies to this service
+    expose:
+      - "9137"
+
+  # ---------------------------------------------------------------------------
+  # bal-pusher: block watcher daemon (Rust)
+  # Subscribes to Bitcoin ZMQ hashblock, queries DB for matured txs,
+  # broadcasts them via Bitcoin Core RPC.
+  # ---------------------------------------------------------------------------
+  bal-pusher:
+    # Reuse the same built image (already built by bal-server service)
+    image: bal-umbrel-rust:latest
+    container_name: bal-umbrel-pusher
+    restart: unless-stopped
+
+    # Pusher must start AFTER the server has initialized the DB
+    depends_on:
+      - bal-server
+
+    command: ["/scripts/entrypoint-pusher.sh"]
+
+    environment:
+      - BAL_PUSHER_DB_FILE=/data/bal.db
+      - APP_BITCOIN_NODE_IP=${APP_BITCOIN_NODE_IP:-}
+      - APP_BITCOIN_RPC_PORT=${APP_BITCOIN_RPC_PORT:-8332}
+      - APP_BITCOIN_RPC_USER=${APP_BITCOIN_RPC_USER:-}
+      - APP_BITCOIN_RPC_PASS=${APP_BITCOIN_RPC_PASS:-}
+      - APP_BITCOIN_DATA_DIR=${APP_BITCOIN_DATA_DIR:-}
+      - BAL_ZMQ_PORT=${BAL_ZMQ_PORT:-28332}
+      - BAL_PUSHER_BITCOIN_HOST=http://${APP_BITCOIN_NODE_IP:-bitcoin}
+      - BAL_PUSHER_BITCOIN_PORT=${APP_BITCOIN_RPC_PORT:-8332}
+      - BAL_PUSHER_BITCOIN_RPC_USER=${APP_BITCOIN_RPC_USER:-}
+      - BAL_PUSHER_BITCOIN_RPC_PASSWORD=${APP_BITCOIN_RPC_PASS:-}
+      - BAL_PUSHER_BITCOIN_COOKIE_FILE=${BAL_PUSHER_BITCOIN_COOKIE_FILE:-/bitcoin-data/.cookie}
+      - BAL_PUSHER_ZMQ_LISTENER=tcp://${APP_BITCOIN_NODE_IP:-bitcoin}:${BAL_ZMQ_PORT:-28332}
+      - BAL_PUSHER_BITCOIN_ZMQ_HASHBLOCK=${BAL_PUSHER_BITCOIN_ZMQ_HASHBLOCK:-tcp://${APP_BITCOIN_NODE_IP:-bitcoin}:${BAL_ZMQ_PORT:-28332}}
+      - BAL_PUSHER_NETWORK=${BAL_PUSHER_NETWORK:-bitcoin}
+      - SSL_KEY_PATH=/data/keys/private_key.pem
+      - BAL_PUSHER_SEND_STATS=${BAL_SEND_STATS:-false}
+      - BAL_SERVER_URL=${BAL_PUBLIC_URL:-}
+      - RUST_LOG=${BAL_LOG_LEVEL:-info}
+
+    volumes:
+      - ${APP_DATA_DIR:-.}/data:/data
+      - ${APP_BITCOIN_DATA_DIR:-/tmp/bitcoin-data}:/bitcoin-data:ro
+
+    networks:
+      - bal-net
+      - default
+      - umbrel_main_network
+      # IPv6-enabled network: the welist aggregator's IPv4 route is broken on
+      # the Umbrel network (connections time out) while IPv6 works. This network
+      # gives the pusher IPv6 connectivity so it can reach welist.bitcoin-after.life.
+      - bal-v6
+
+  # ---------------------------------------------------------------------------
+  # bal-ui: Nginx web dashboard
+  # Serves the static HTML/JS dashboard and reverse-proxies /api/* to bal-server
+  # ---------------------------------------------------------------------------
+  bal-ui:
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.ui
+    container_name: bal-umbrel-ui
+    restart: unless-stopped
+
+    depends_on:
+      - bal-server
+
+    environment:
+      # Pass tor hostname path so entrypoint can expose it to the UI
+      - TOR_HOSTNAME_PATH=/tor/hostname
+
+    ports:
+      # This is the port Umbrel maps to the external dashboard
+      - "${APP_PORT:-9140}:80"
+
+    volumes:
+      - ${APP_DATA_DIR:-.}/data:/app-data:ro
+      # Tor hostname file ÔÇö Umbrel writes this automatically
+      - ${APP_TOR_DATA_DIR:-/tmp/tor}:/tor:ro
+
+    networks:
+      - bal-net
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  bal-net:
+    driver: bridge
+
+  default:
+    driver: bridge
+
+  # IPv6-enabled bridge so the pusher can reach the welist aggregator, whose
+  # IPv4 route is broken on the Umbrel network (IPv6 works). Docker performs
+  # NAT66 for this ULA range automatically.
+  bal-v6:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:ba1:e21::/64
+
+  umbrel_main_network:
+    external: true
