@@ -29,6 +29,8 @@
       --error-dim:  #3d0a10;
       --warning:    #ffc740;
       --warning-dim:#3d2d00;
+      --neutral:    #6f8fb0;   /* "done elsewhere" — positive but not by us */
+      --neutral-dim:#1b2a3d;
       --mono:       ui-monospace, 'Cascadia Code', 'Fira Code', Menlo, Consolas, monospace;
       --sans:       system-ui, -apple-system, 'Segoe UI', sans-serif;
       --radius:     6px;
@@ -374,13 +376,48 @@
     .status-badge.mempool  .dot { background: var(--warning); animation: pulse-orange 1.8s infinite; }
     .status-badge.confirmed { background: var(--success-dim); color: var(--success); }
     .status-badge.confirmed .dot { background: var(--success); }
-    .status-badge.other-will { background: var(--success-dim); color: var(--success); }
-    .status-badge.other-will .dot { background: var(--success); }
 
     @keyframes pulse-orange {
       0%, 100% { opacity: 1; transform: scale(1); }
       50%       { opacity: 0.4; transform: scale(0.7); }
     }
+
+    /* ---- Transactions: unified State badge + toolbar + pager ---- */
+    .status-badge.elsewhere  { background: var(--neutral-dim); color: var(--neutral); }
+    .status-badge.elsewhere .dot { background: var(--neutral); }
+
+    .tx-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 16px;
+      padding: 12px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); }
+    .tx-legend .item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
+    .tx-legend .desc { color: var(--text-dim); }
+
+    .tx-toolbar { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: end; margin-bottom: 16px; }
+    .tx-toolbar .field { min-width: 0; }
+    .tx-toolbar .check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-muted);
+      text-transform: none; letter-spacing: 0; cursor: pointer; white-space: nowrap; padding-bottom: 9px; }
+    .tx-search { position: relative; }
+    .tx-search input { padding-left: 32px; }
+    .tx-search .ico { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); width: 14px; height: 14px;
+      color: var(--text-muted); pointer-events: none; }
+    @media (max-width: 640px) { .tx-toolbar { grid-template-columns: 1fr 1fr; } }
+
+    .tx-scroll { overflow-x: auto; }
+    .tx-table th.sortable { cursor: pointer; user-select: none; transition: color 0.12s; }
+    .tx-table th.sortable:hover { color: var(--text); }
+    .tx-table th .arrow { opacity: 0.35; font-size: 9px; margin-left: 3px; }
+    .tx-table th.sorted .arrow { opacity: 1; color: var(--accent); }
+
+    .tx-pager { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 16px; flex-wrap: wrap; }
+    .tx-pager .count { font-size: 12px; color: var(--text-muted); font-variant-numeric: tabular-nums; }
+    .tx-pager .count b { color: var(--text); }
+    .tx-pager .pages { display: flex; gap: 4px; align-items: center; }
+    .pg-btn { min-width: 32px; height: 32px; padding: 0 9px; border-radius: var(--radius); border: 1px solid var(--border);
+      background: var(--surface2); color: var(--text-muted); font-family: var(--mono); font-size: 12px; cursor: pointer;
+      transition: all 0.12s; display: inline-flex; align-items: center; justify-content: center; }
+    .pg-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .pg-btn.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); cursor: default; }
+    .pg-btn:disabled { opacity: 0.3; cursor: not-allowed; }
+    .pg-ellipsis { color: var(--text-dim); padding: 0 2px; font-size: 12px; }
 
     /* ---- TX search result ---- */
     .tx-result {
@@ -873,26 +910,54 @@
       <h2>Transaction <span>List</span></h2>
 
       <div class="card">
-        <div class="card-title">Last 100 Transactions</div>
+        <div class="card-title">Transactions</div>
 
-        <div class="form-group" style="margin-bottom:16px;">
-          <label for="tx-filter-network">Filter by Network</label>
-          <select id="tx-filter-network" onchange="loadTransactions()">
-            <option value="">All networks</option>
-            <option value="bitcoin">Bitcoin</option>
-            <option value="testnet">Testnet</option>
-            <option value="testnet4">Testnet4</option>
-            <option value="signet">Signet</option>
-            <option value="regtest">Regtest</option>
-          </select>
-          <label style="display:inline-flex;align-items:center;gap:6px;margin-left:16px;font-size:12px;cursor:pointer;">
-            <input type="checkbox" id="tx-show-failed" onchange="loadTransactions()" checked />
-            Show failed
-          </label>
+        <div class="tx-legend">
+          <span class="item"><span class="status-badge waiting"><span class="dot"></span>WAITING</span> <span class="desc">locktime not reached</span></span>
+          <span class="item"><span class="status-badge mempool"><span class="dot"></span>IN MEMPOOL</span> <span class="desc">broadcast, 0 conf</span></span>
+          <span class="item"><span class="status-badge confirmed"><span class="dot"></span>CONFIRMED</span> <span class="desc">on-chain</span></span>
+          <span class="item"><span class="status-badge elsewhere"><span class="dot"></span>DONE ELSEWHERE</span> <span class="desc">completed by another executor</span></span>
+          <span class="item"><span class="status-badge failed"><span class="dot"></span>REJECTED</span> <span class="desc">broadcast failed</span></span>
         </div>
 
-        <div id="tx-list-container">
-          <div style="text-align:center;padding:20px;color:var(--text-muted);">Select a network to load transactions.</div>
+        <div class="tx-toolbar">
+          <div class="field tx-search">
+            <label for="tx-search-input">Search by TXID</label>
+            <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
+            <input type="text" id="tx-search-input" placeholder="paste a txid or prefix..." autocomplete="off" />
+          </div>
+          <div class="field">
+            <label for="tx-filter-network">Network</label>
+            <select id="tx-filter-network">
+              <option value="">All networks</option>
+              <option value="bitcoin">Bitcoin</option>
+              <option value="testnet">Testnet</option>
+              <option value="testnet4">Testnet4</option>
+              <option value="signet">Signet</option>
+              <option value="regtest">Regtest</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="tx-page-size">Per page</label>
+            <select id="tx-page-size">
+              <option>10</option>
+              <option selected>25</option>
+              <option>50</option>
+              <option>100</option>
+            </select>
+          </div>
+          <label class="check"><input type="checkbox" id="tx-show-failed" checked /> Show failed</label>
+        </div>
+
+        <div class="tx-scroll">
+          <div id="tx-list-container">
+            <div style="text-align:center;padding:20px;color:var(--text-muted);"><span class="spinner"></span> Loading...</div>
+          </div>
+        </div>
+
+        <div class="tx-pager" id="tx-pager" style="display:none">
+          <div class="count" id="tx-count"></div>
+          <div class="pages" id="tx-pages"></div>
         </div>
       </div>
     </div>
@@ -1094,10 +1159,29 @@ function formatSats(sats) {
   return n.toLocaleString() + ' sat';
 }
 
-/* ---- Utility: decode status number to label ---- */
-function statusLabel(s) {
-  const map = { '0': 'waiting', '1': 'sent', '2': 'failed' };
-  return map[String(s)] || 'unknown';
+/* ---- Unified transaction state ----
+   Collapses the raw (status, confirmations) pair into one coherent lifecycle
+   state, used identically by the list, the detail modal and the search panel.
+   status: 0=waiting, 1=broadcast, 2=failed; confirmations: -1 means the tx was
+   evicted from the mempool (another executor won the race — good for the heir),
+   any other value on status=2 is a genuine broadcast rejection. */
+function resolveState(tx) {
+  const st = parseInt(tx.status, 10);
+  const c  = parseInt(tx.confirmations, 10);
+  if (st === 0) return { ord: 0, cls: 'waiting', label: 'WAITING',
+    title: 'Locktime not reached yet — not broadcast' };
+  if (st === 1) return c > 0
+    ? { ord: 2, cls: 'confirmed', label: 'CONFIRMED (' + c + ')', title: c + ' confirmation(s) on-chain' }
+    : { ord: 1, cls: 'mempool', label: 'IN MEMPOOL', title: 'Broadcast — waiting for the first confirmation' };
+  if (c === -1) return { ord: 3, cls: 'elsewhere', label: 'DONE ELSEWHERE',
+    title: 'Another will executor already completed this transfer — a positive outcome for the heir' };
+  return { ord: 4, cls: 'failed', label: 'REJECTED',
+    title: 'Broadcast failed' + (tx.push_err ? ': ' + tx.push_err : '') };
+}
+function stateBadge(tx) {
+  const s = resolveState(tx);
+  const t = s.title.replace(/"/g, '&quot;');
+  return '<span class="status-badge ' + s.cls + '" title="' + t + '"><span class="dot"></span>' + s.label + '</span>';
 }
 
 /* ---- Utility: short txid with ellipsis ---- */
@@ -1105,17 +1189,6 @@ function shortTxid(txid) {
   if (!txid || txid.length <= 16) return txid || '—';
   const n = Math.floor(txid.length / 4);
   return txid.slice(0, n) + '\u2026' + txid.slice(-n);
-}
-
-/* ---- Utility: blockchain confirmation badge ---- */
-function confirmBadge(tx) {
-  if (tx.status === 0) return '\u2014';
-  if (tx.status === 2) {
-    return '<span class="status-badge other-will" title="Other competing executors already had this TX in the Bitcoin After Life plugin — this executor arrived late and the TX was double-spent"><span class="dot"></span>OTHER EXECUTORS</span>';
-  }
-  const c = parseInt(tx.confirmations, 10);
-  if (c > 0) return '<span class="status-badge confirmed"><span class="dot"></span>YES</span>';
-  return '<span class="status-badge mempool"><span class="dot"></span>MEMPOOL</span>';
 }
 
 /* ---- Utility: format locktime (block height or timestamp) ---- */
@@ -1376,10 +1449,9 @@ async function searchTx() {
     const j = await r.json();
     if (!j || !j.status) { notFoundEl.style.display = 'flex'; return; }
 
-    const sl = statusLabel(j.status);
-    const badge = `<span class="status-badge ${sl}"><span class="dot"></span>${sl.toUpperCase()}</span>`;
-    document.getElementById('tx-status-badge').innerHTML = badge;
-    document.getElementById('tx-status-text').textContent = sl + ' (code: ' + j.status + ')';
+    const st = resolveState(j);
+    document.getElementById('tx-status-badge').innerHTML = stateBadge(j);
+    document.getElementById('tx-status-text').textContent = st.title;
     document.getElementById('tx-address').textContent = j.our_address || '—';
     document.getElementById('tx-fee').textContent     = j.our_fees ? formatSats(j.our_fees) : '—';
 
@@ -1402,6 +1474,19 @@ async function searchTx() {
 document.getElementById('search-txid').addEventListener('keydown', e => {
   if (e.key === 'Enter') searchTx();
 });
+
+/* ---- Transactions toolbar wiring (filters reset to page 1) ---- */
+['tx-filter-network', 'tx-page-size', 'tx-show-failed'].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener('change', () => { txPage = 1; loadTransactions(); });
+});
+(function () {
+  const s = document.getElementById('tx-search-input');
+  if (s) s.addEventListener('input', () => {
+    clearTimeout(txSearchTimer);
+    txSearchTimer = setTimeout(() => { txPage = 1; loadTransactions(); }, 300);
+  });
+})();
 
 /* ===== Header branding update ===== */
 async function updateHeaderBranding() {
@@ -1671,44 +1756,103 @@ function showSettingsMsg(text, cls) {
   el.className = 'result-box visible ' + cls;
 }
 
-/* ---- Load transaction list ---- */
+/* ---- Transaction list: server-side search, sort & pagination ---- */
+let txPage = 1;
+let txSort = 'date_creation';
+let txDir  = 'desc';
+let txSearchTimer = null;
+
 async function loadTransactions() {
   const container = document.getElementById('tx-list-container');
+  const pager = document.getElementById('tx-pager');
   const network = document.getElementById('tx-filter-network').value;
   const showFailed = document.getElementById('tx-show-failed').checked;
-  const params = [];
-  if (network) params.push('network=' + encodeURIComponent(network));
-  if (showFailed) params.push('show_failed=1');
-  const url = '/api/txlist' + (params.length ? '?' + params.join('&') : '');
+  const size = parseInt(document.getElementById('tx-page-size').value, 10) || 25;
+  const search = document.getElementById('tx-search-input').value.trim();
+  const offset = (txPage - 1) * size;
+
+  const params = new URLSearchParams();
+  if (network) params.set('network', network);
+  if (showFailed) params.set('show_failed', '1');
+  if (search) params.set('search', search);
+  params.set('limit', size);
+  params.set('offset', offset);
+  params.set('sort', txSort);
+  params.set('dir', txDir);
+
   container.innerHTML = '<div style="text-align:center;padding:20px;"><span class="spinner"></span> Loading...</div>';
+  pager.style.display = 'none';
   try {
-    const r = await fetch(url);
-    const txs = await r.json();
-    if (!txs || txs.length === 0) {
-      container.innerHTML = '<div style="text-align:center;padding:20px;color:var(--text-muted);">No transactions found.</div>';
+    const r = await fetch('/api/txlist?' + params.toString());
+    const data = await r.json();
+    const txs = data.txs || [];
+    const total = data.total || 0;
+
+    // If a filter change left us past the last page, clamp and reload once.
+    const pages = Math.max(1, Math.ceil(total / size));
+    if (total > 0 && txPage > pages) { txPage = pages; return loadTransactions(); }
+
+    if (total === 0) {
+      container.innerHTML = '<div style="text-align:center;padding:24px;color:var(--text-muted);">No transactions match your filters.</div>';
       return;
     }
-    let html = '<table class="tx-table"><thead><tr>' +
-      '<th>TXID</th><th>Network</th><th class="right">Server Fee</th><th class="center">Status</th><th class="center">Confirmed</th><th class="right">Locktime</th>' +
-      '</tr></thead><tbody>';
-    const renderTx = (tx) => {
-      const sl = statusLabel(tx.status);
-      const badge = '<span class="status-badge ' + sl + '" style="font-size:10px;"><span class="dot"></span>' + sl.toUpperCase() + '</span>';
-      html += '<tr onclick="showTxDetail(\'' + tx.txid + '\')">' +
+
+    const cols = [
+      ['txid', 'TXID', ''], ['network', 'Network', ''], ['our_fees', 'Server Fee', 'right'],
+      ['state', 'State', ''], ['locktime', 'Locktime', 'right']
+    ];
+    const head = '<thead><tr>' + cols.map(([k, label, cls]) => {
+      const on = k === txSort;
+      const arrow = on ? (txDir === 'asc' ? '▴' : '▾') : '▾';
+      return '<th class="sortable ' + cls + (on ? ' sorted' : '') + '" onclick="sortTx(\'' + k + '\')">' +
+        label + ' <span class="arrow">' + arrow + '</span></th>';
+    }).join('') + '</tr></thead>';
+    const body = '<tbody>' + txs.map(tx =>
+      '<tr onclick="showTxDetail(\'' + tx.txid + '\')">' +
         '<td class="mono" title="' + (tx.txid || '') + '">' + shortTxid(tx.txid) + '</td>' +
         '<td>' + (tx.network || '—') + '</td>' +
         '<td class="right">' + formatSats(tx.our_fees || 0) + '</td>' +
-        '<td class="center">' + badge + '</td>' +
-        '<td class="center">' + confirmBadge(tx) + '</td>' +
+        '<td>' + stateBadge(tx) + '</td>' +
         '<td class="right mono">' + formatLocktime(tx.locktime) + '</td>' +
-        '</tr>';
-    };
-    for (const tx of txs) renderTx(tx);
-    html += '</tbody></table>';
-    container.innerHTML = html;
+      '</tr>').join('') + '</tbody>';
+    container.innerHTML = '<table class="tx-table">' + head + body + '</table>';
+
+    const from = offset + 1, to = Math.min(offset + size, total);
+    const filtered = (network || search || !showFailed) ? ' (filtered)' : '';
+    document.getElementById('tx-count').innerHTML =
+      'Showing <b>' + from + '–' + to + '</b> of <b>' + total + '</b>' + filtered;
+    document.getElementById('tx-pages').innerHTML = buildTxPager(txPage, pages);
+    pager.style.display = 'flex';
   } catch (e) {
     container.innerHTML = '<div class="alert error" style="display:flex;">Error loading transactions: ' + e.message + '</div>';
   }
+}
+
+function sortTx(k) {
+  if (txSort === k) { txDir = (txDir === 'asc') ? 'desc' : 'asc'; }
+  else { txSort = k; txDir = (k === 'txid' || k === 'network' || k === 'state') ? 'asc' : 'desc'; }
+  txPage = 1;
+  loadTransactions();
+}
+
+function gotoTxPage(n) { txPage = n; loadTransactions(); }
+
+function buildTxPager(page, pages) {
+  const P = [];
+  P.push('<button class="pg-btn" ' + (page === 1 ? 'disabled' : '') +
+    ' onclick="gotoTxPage(' + (page - 1) + ')">‹</button>');
+  let last = 0;
+  for (let n = 1; n <= pages; n++) {
+    if (n === 1 || n === pages || (n >= page - 1 && n <= page + 1)) {
+      if (last && n - last > 1) P.push('<span class="pg-ellipsis">…</span>');
+      P.push('<button class="pg-btn ' + (n === page ? 'active' : '') +
+        '" onclick="gotoTxPage(' + n + ')">' + n + '</button>');
+      last = n;
+    }
+  }
+  P.push('<button class="pg-btn" ' + (page === pages ? 'disabled' : '') +
+    ' onclick="gotoTxPage(' + (page + 1) + ')">›</button>');
+  return P.join('');
 }
 
 /* ---- Show transaction detail modal ---- */
@@ -1724,8 +1868,6 @@ async function showTxDetail(txid) {
       content.innerHTML = '<div class="alert error" style="display:flex;">Transaction not found.</div>';
       return;
     }
-    const sl = statusLabel(tx.status);
-    const badge = '<span class="status-badge ' + sl + '" style="font-size:11px;"><span class="dot"></span>' + sl.toUpperCase() + '</span>';
     let html =
       '<div class="detail-section">' +
       '<div class="detail-row"><span class="detail-key">TXID</span><span class="detail-val mono" style="font-size:11px;word-break:break-all;">' + (tx.txid || '—') + '</span></div>' +
@@ -1734,16 +1876,16 @@ async function showTxDetail(txid) {
       '<div class="detail-row"><span class="detail-key">Total Output</span><span class="detail-val">' + formatSats(tx.total_output || 0) + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Network Fee</span><span class="detail-val">' + (tx.network_fees ? formatSats(tx.network_fees) : '—') + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Address</span><span class="detail-val">' + (tx.our_address || '—') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-key">Status</span><span class="detail-val">' + badge + '</span></div>' +
-      '<div class="detail-row"><span class="detail-key">Confirmed</span><span class="detail-val">' + confirmBadge(tx) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">State</span><span class="detail-val">' + stateBadge(tx) + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Confirmations</span><span class="detail-val">' + (parseInt(tx.confirmations,10) === -1 ? 'n/a (evicted from mempool)' : (parseInt(tx.confirmations,10) || 0)) + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Locktime</span><span class="detail-val">' + formatLocktime(tx.locktime) + ' <span class="muted">' + (parseInt(tx.locktime,10) < 500000000 ? 'Block Number ' + Number(tx.locktime).toLocaleString() : '(' + tx.locktime + ')') + '</span></span></div>' +
       '<div class="detail-row"><span class="detail-key">Created</span><span class="detail-val">' + (tx.date_creation || '—') + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Updated</span><span class="detail-val">' + (tx.date_update || '—') + '</span></div>';
-    if (tx.status === 2) {
+    if (tx.status === 2 && parseInt(tx.confirmations,10) === -1) {
       html += '<div class="detail-row"><span class="detail-key">&nbsp;</span>' +
-        '<span class="detail-val" style="color:var(--error);font-size:11px;">' +
-        '\u26A0 Other competing executors already claimed this TX via the Bitcoin After Life plugin. ' +
-        'This executor arrived too late.</span></div>';
+        '<span class="detail-val" style="color:var(--neutral);font-size:11px;">' +
+        'Another will executor already completed this transfer via the Bitcoin After Life network. ' +
+        'This is a positive outcome for the heir.</span></div>';
     }
     if (tx.push_err) {
       html += '<div class="detail-row"><span class="detail-key">Error</span><span class="detail-val" style="color:var(--error);">' + tx.push_err + '</span></div>';

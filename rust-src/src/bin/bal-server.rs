@@ -113,6 +113,15 @@ pub struct TxListEntry {
     pub confirmations: i64,
 }
 
+/// Paginated response for /txlist: `total` is the count of rows matching the
+/// filters (ignoring limit/offset), so the UI can render pagination controls;
+/// `txs` is the current page.
+#[derive(Debug, Serialize, Deserialize)]
+pub struct TxListResponse {
+    pub total: i64,
+    pub txs: Vec<TxListEntry>,
+}
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct InputEntry {
     pub in_txid: String,
@@ -434,42 +443,128 @@ FROM tbl_stats s WHERE s.chain = '{}'
     }
 }
 
+/// Read a single query-string parameter from `uri` (everything after '?').
+/// Returns the raw (still URL-encoded) value; callers sanitize as needed.
+fn query_param(uri: &str, key: &str) -> Option<String> {
+    let q = uri.split('?').nth(1)?;
+    q.split('&').find_map(|pair| {
+        let mut it = pair.splitn(2, '=');
+        match (it.next(), it.next()) {
+            (Some(k), v) if k == key => Some(v.unwrap_or("").to_string()),
+            _ => None,
+        }
+    })
+}
+
 async fn echo_txlist(
     uri: &str,
     cfg: &MyConfig,
 ) -> Result<Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let network = uri.split("?network=").nth(1)
-        .map(|v| v.split('&').next().unwrap_or(""))
-        .filter(|s| !s.is_empty());
-    let show_failed = uri.contains("show_failed=1");
+    // --- Parse & sanitize inputs (all values are BOUND, never interpolated) ---
+    let network = query_param(uri, "network").filter(|s| !s.is_empty());
+    let show_failed = query_param(uri, "show_failed").as_deref() == Some("1");
+    // txid search: keep only hex chars (neutralizes LIKE metacharacters and any
+    // injection attempt), cap at a full txid length. Prefix match, index-friendly.
+    let search: String = query_param(uri, "search")
+        .unwrap_or_default()
+        .chars()
+        .filter(|c| c.is_ascii_hexdigit())
+        .take(64)
+        .collect();
+    let limit: i64 = query_param(uri, "limit")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(25)
+        .clamp(1, 200);
+    let offset: i64 = query_param(uri, "offset")
+        .and_then(|s| s.parse().ok())
+        .unwrap_or(0)
+        .max(0);
+    // ORDER BY column is chosen from a fixed whitelist — never user text.
+    let order_expr = match query_param(uri, "sort").as_deref() {
+        Some("txid") => "txid",
+        Some("network") => "network",
+        Some("our_fees") => "CAST(our_fees AS INTEGER)",
+        Some("locktime") => "locktime",
+        // Lifecycle order of the unified UI "State" column:
+        // waiting(0) < mempool(1) < confirmed(2) < done-elsewhere(3) < rejected(4)
+        Some("state") => "CASE \
+            WHEN status=0 THEN 0 \
+            WHEN status=1 AND confirmations>0 THEN 2 \
+            WHEN status=1 THEN 1 \
+            WHEN status=2 AND confirmations=-1 THEN 3 \
+            ELSE 4 END",
+        _ => "date_creation",
+    };
+    let dir = if query_param(uri, "dir").as_deref() == Some("asc") { "ASC" } else { "DESC" };
 
-    let db = open_db(&cfg.db_file).unwrap();
-    let status_filter = if show_failed { String::new() } else { "AND status IN (0,1)".to_string() };
-    let sql = match network {
-        Some(ref net) => format!("SELECT txid, network, our_fees, our_address, status, locktime, date_creation, confirmations FROM tbl_tx WHERE network = '{}' {} ORDER BY date_creation DESC LIMIT 100", net, status_filter),
-        None => format!("SELECT txid, network, our_fees, our_address, status, locktime, date_creation, confirmations FROM tbl_tx WHERE 1=1 {} ORDER BY date_creation DESC LIMIT 100", status_filter),
+    // --- Build a parameterized WHERE shared by the COUNT and the SELECT ---
+    let mut where_parts: Vec<&str> = vec!["1=1"];
+    let mut binds: Vec<Value> = Vec::new();
+    if let Some(ref net) = network {
+        where_parts.push("network = ?");
+        binds.push(Value::String(net.clone()));
+    }
+    if !show_failed {
+        where_parts.push("status IN (0,1)");
+    }
+    if !search.is_empty() {
+        where_parts.push("txid LIKE ?");
+        binds.push(Value::String(format!("{}%", search)));
+    }
+    let where_sql = where_parts.join(" AND ");
+
+    let db = match open_db(&cfg.db_file) {
+        Ok(d) => d,
+        Err(e) => {
+            let mut resp = Response::new(full(format!("db error: {}", e)));
+            *resp.status_mut() = StatusCode::INTERNAL_SERVER_ERROR;
+            return Ok(resp);
+        }
     };
 
-    let mut txs: Vec<TxListEntry> = vec![];
-    let _ = db.iterate(&sql, |pairs| {
-        let row: HashMap<_, _> = pairs
-            .into_iter()
-            .map(|(k, v)| (k.to_string(), v.map(|s| s)))
-            .collect();
-        txs.push(TxListEntry {
-            txid: row.get("txid").and_then(|v| *v).unwrap_or("").to_string(),
-            network: row.get("network").and_then(|v| *v).unwrap_or("").to_string(),
-            our_fees: row.get("our_fees").and_then(|v| *v).unwrap_or("").to_string(),
-            our_address: row.get("our_address").and_then(|v| *v).unwrap_or("").to_string(),
-            status: row.get("status").and_then(|v| *v).unwrap_or("0").parse::<i64>().unwrap_or(0),
-            locktime: row.get("locktime").and_then(|v| *v).unwrap_or("0").parse::<i64>().unwrap_or(0),
-            date_creation: row.get("date_creation").and_then(|v| *v).unwrap_or("").to_string(),
-            confirmations: row.get("confirmations").and_then(|v| *v).unwrap_or("0").parse::<i64>().unwrap_or(0),
-        });
-        true
-    });
+    // --- Total count matching the filters (for pagination) ---
+    let count_sql = format!("SELECT COUNT(*) AS c FROM tbl_tx WHERE {}", where_sql);
+    let mut total: i64 = 0;
+    if let Ok(mut cstmt) = db.prepare(&count_sql) {
+        for (i, v) in binds.iter().enumerate() {
+            let _ = cstmt.bind((i + 1, v.clone()));
+        }
+        if let Ok(State::Row) = cstmt.next() {
+            total = cstmt.read::<i64, _>("c").unwrap_or(0);
+        }
+    }
 
-    match serde_json::to_string(&txs) {
+    // --- Page of rows ---
+    let select_sql = format!(
+        "SELECT txid, network, our_fees, our_address, status, locktime, date_creation, confirmations \
+         FROM tbl_tx WHERE {} ORDER BY {} {} LIMIT ? OFFSET ?",
+        where_sql, order_expr, dir
+    );
+    let mut txs: Vec<TxListEntry> = Vec::new();
+    if let Ok(mut stmt) = db.prepare(&select_sql) {
+        let mut i: usize = 1;
+        for v in &binds {
+            let _ = stmt.bind((i, v.clone()));
+            i += 1;
+        }
+        let _ = stmt.bind((i, Value::Integer(limit)));
+        let _ = stmt.bind((i + 1, Value::Integer(offset)));
+        while let Ok(State::Row) = stmt.next() {
+            txs.push(TxListEntry {
+                txid: stmt.read::<String, _>("txid").unwrap_or_default(),
+                network: stmt.read::<String, _>("network").unwrap_or_default(),
+                our_fees: stmt.read::<String, _>("our_fees").unwrap_or_default(),
+                our_address: stmt.read::<String, _>("our_address").unwrap_or_default(),
+                status: stmt.read::<i64, _>("status").unwrap_or(0),
+                locktime: stmt.read::<i64, _>("locktime").unwrap_or(0),
+                date_creation: stmt.read::<String, _>("date_creation").unwrap_or_default(),
+                confirmations: stmt.read::<i64, _>("confirmations").unwrap_or(0),
+            });
+        }
+    }
+
+    let payload = TxListResponse { total, txs };
+    match serde_json::to_string(&payload) {
         Ok(json_data) => Ok(Response::new(full(json_data))),
         Err(err) => Ok(Response::new(full(format!("error:{}", err)))),
     }
@@ -945,6 +1040,12 @@ async fn echo_search(
             match statement.read::<String, _>("reqid") {
                 Ok(value) => response_data.insert("time", value),
                 Err(e) => { error!("Error reading reqid: {}", e); None }
+            };
+            // confirmations lets the UI resolve the same unified "State" it shows
+            // in the transaction list (distinguishes DONE-ELSEWHERE from REJECTED).
+            match statement.read::<i64, _>("confirmations") {
+                Ok(value) => response_data.insert("confirmations", value.to_string()),
+                Err(e) => { error!("Error reading confirmations: {}", e); None }
             };
             response = match serde_json::to_string(&response_data) {
                 Ok(json_data) => Response::new(full(json_data)),
