@@ -181,24 +181,55 @@
     }
 
     /* ---- Stat row ---- */
-    .stat-grid-top, .stat-grid-bot {
+    .stat-grid-top, .stat-grid-fees {
       display: grid;
       gap: 12px;
     }
-    .stat-grid-top { grid-template-columns: repeat(4, 1fr); }
-    .stat-grid-bot { grid-template-columns: repeat(4, 1fr); margin-top: 12px; }
+    .stat-grid-top { grid-template-columns: repeat(4, 1fr) 1.3fr; }
+    .stat-grid-fees { grid-template-columns: repeat(4, 1fr); margin-top: 12px; }
     .stat-box {
       background: var(--surface2);
       border: 1px solid var(--border);
       border-radius: var(--radius);
       padding: 14px 16px;
     }
+    /* Compact variant: used for the top counts row (Total/Waiting/Sent/Failed),
+       which only ever holds a short label + a 1-2 digit number — no need for
+       the same generous padding as the fee boxes below. */
+    .stat-box.compact { padding: 9px 14px; }
+    .stat-box.compact .stat-label { margin-bottom: 2px; }
+    .stat-box.compact .stat-value { font-size: 15px; }
+    /* Headline summary box (Protocol Value) — sits in the top row but carries
+       more weight than a plain count, so it is lit up in bright white to stand out. */
+    .stat-box.highlight {
+      border-color: rgba(255, 255, 255, 0.55);
+      background: rgba(255, 255, 255, 0.06);
+      box-shadow: 0 0 14px rgba(255, 255, 255, 0.20), inset 0 0 22px rgba(255, 255, 255, 0.04);
+    }
+    .stat-box.highlight .stat-value   { color: #ffffff; }
+    .stat-box.highlight .stat-label   { color: rgba(255, 255, 255, 0.82); }
+    .stat-box.highlight .stat-eyebrow { color: rgba(255, 255, 255, 0.65); }
     .stat-label {
       font-size: 11px;
       color: var(--text-muted);
       text-transform: uppercase;
       letter-spacing: 0.08em;
       margin-bottom: 4px;
+    }
+    .stat-eyebrow {
+      font-size: 9px;
+      font-weight: 700;
+      color: var(--text-dim);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      margin-bottom: 3px;
+    }
+    /* Inline "estimate" tag placed next to a stat label on the same line. */
+    .stat-tag {
+      font-size: 9px;
+      font-weight: 600;
+      color: var(--text-dim);
+      letter-spacing: 0.06em;
     }
     .stat-value {
       font-size: 17px;
@@ -209,6 +240,7 @@
     }
     .stat-value.orange { color: var(--accent); }
     .stat-value.green  { color: var(--success); }
+    .stat-value.yellow { color: var(--warning); }
     .stat-value.red    { color: var(--error); }
     .stat-footnote { font-size: 20px; color: var(--text-muted); margin-top: 8px; }
 
@@ -360,6 +392,7 @@
       font-weight: 700;
       text-transform: uppercase;
       letter-spacing: 0.08em;
+      white-space: nowrap;
     }
     .status-badge .dot {
       width: 7px; height: 7px;
@@ -386,10 +419,14 @@
     .status-badge.elsewhere  { background: var(--neutral-dim); color: var(--neutral); }
     .status-badge.elsewhere .dot { background: var(--neutral); }
 
-    .tx-legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-bottom: 16px;
-      padding: 12px 14px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); }
-    .tx-legend .item { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--text-muted); }
-    .tx-legend .desc { color: var(--text-dim); }
+    .tx-legend { display: grid; grid-template-columns: 2fr 3fr; gap: 10px 28px; margin-bottom: 18px;
+      padding: 14px 16px; background: var(--surface2); border: 1px solid var(--border); border-radius: var(--radius); }
+    .tx-legend-title { grid-column: 1 / -1; font-size: 10px; font-weight: 600; text-transform: uppercase;
+      letter-spacing: 0.1em; color: var(--text-muted); margin-bottom: 2px; }
+    .tx-legend .item { display: grid; grid-template-columns: auto 1fr; align-items: center; gap: 12px; font-size: 11px; }
+    .tx-legend .item .status-badge { justify-self: start; }
+    .tx-legend .desc { color: var(--text-muted); font-size: 13px; }
+    @media (max-width: 560px) { .tx-legend { grid-template-columns: 1fr; } }
 
     .tx-toolbar { display: grid; grid-template-columns: 1fr auto auto auto; gap: 12px; align-items: end; margin-bottom: 16px; }
     .tx-toolbar .field { min-width: 0; }
@@ -596,7 +633,8 @@
       main { padding: 16px 14px; }
       header { padding: 0 14px; }
       .stat-grid-top { grid-template-columns: 1fr 1fr; }
-      .stat-grid-bot { grid-template-columns: 1fr 1fr; }
+      .stat-grid-top .stat-box.highlight { grid-column: 1 / -1; }
+      .stat-grid-fees { grid-template-columns: 1fr 1fr; }
       .logo-sub { display: none; }
     }
   </style>
@@ -679,18 +717,24 @@
       <div class="card">
         <div class="card-title">Network Stats — <span id="active-net-label">…</span></div>
         <div class="stat-grid-top">
-          <div class="stat-box"><div class="stat-label">Total TXs</div><div class="stat-value" id="s-total">—</div></div>
-          <div class="stat-box"><div class="stat-label">Waiting</div><div class="stat-value orange" id="s-waiting">—</div></div>
-          <div class="stat-box"><div class="stat-label">Sent</div><div class="stat-value green" id="s-sent">—</div></div>
-          <div class="stat-box"><div class="stat-label">Failed</div><div class="stat-value red" id="s-failed">—</div></div>
+          <div class="stat-box compact"><div class="stat-label">Total TXs</div><div class="stat-value" id="s-total">—</div></div>
+          <div class="stat-box compact"><div class="stat-label">Waiting</div><div class="stat-value orange" id="s-waiting">—</div></div>
+          <div class="stat-box compact"><div class="stat-label">Sent</div><div class="stat-value green" id="s-sent">—</div></div>
+          <div class="stat-box compact"><div class="stat-label">Elsewhere</div><div class="stat-value red" id="s-failed">—</div></div>
+          <div class="stat-box compact highlight" title="Estimated total inheritance-fee value handled by the protocol: fees we collected, plus an estimate of what competitors collected, plus fees still pending or scheduled. Based on our own fee as the unit of estimation.">
+            <div class="stat-eyebrow">Estimate</div><div class="stat-label">Protocol Value*</div><div class="stat-value" id="fee-total">—</div></div>
         </div>
-        <div class="stat-grid-bot">
-          <div class="stat-box"><div class="stat-label">Gain Fee*</div><div class="stat-value green" id="s-confirmed-profit">—</div></div>
-          <div class="stat-box"><div class="stat-label">Total Fee Will-Executor*</div><div class="stat-value green" id="s-total-executor-profit">—</div></div>
-          <div class="stat-box"><div class="stat-label">Waiting Fee*</div><div class="stat-value" id="s-protocol-profit">—</div></div>
-          <div class="stat-box"><div class="stat-label">Protocol Fee*</div><div class="stat-value" id="s-total-profit">—</div></div>
+        <div class="stat-grid-fees">
+          <div class="stat-box" title="Fees on transactions confirmed on-chain — actually collected by this executor.">
+            <div class="stat-label">Earned*</div><div class="stat-value green" id="fee-earned">—</div></div>
+          <div class="stat-box" title="Fees on transactions broadcast but not yet confirmed (still in the mempool).">
+            <div class="stat-label">In Mempool*</div><div class="stat-value yellow" id="fee-mempool">—</div></div>
+          <div class="stat-box" title="Fees on transactions still waiting for their locktime — not broadcast yet.">
+            <div class="stat-label">Scheduled*</div><div class="stat-value orange" id="fee-scheduled">—</div></div>
+          <div class="stat-box" title="Estimated fee collected by a competing executor. We only see our own transactions, so when ours does not go through we assume another executor completed it and earned a similar fee — inheritance fees tend to converge to a market median, so our own fee is used as the estimate.">
+            <div class="stat-label">Missed* <span class="stat-tag">Estimate</span></div><div class="stat-value red" id="fee-missed">—</div></div>
         </div>
-        <div class="stat-footnote">* The fees and data shown are since the activation date of this Will-Executor.</div>
+        <div class="stat-footnote">* Since the activation date of this Will-Executor. Values are <b>estimates</b> based on our own inheritance fee. Only <b>Earned</b> is income we actually collected; <b>Missed</b> estimates what competing executors earned (we only see our own transactions), and <b>Protocol Value</b> is the sum of all four.</div>
       </div>
 
       <!-- Network info card (address + fee) -->
@@ -913,11 +957,11 @@
         <div class="card-title">Transactions</div>
 
         <div class="tx-legend">
-          <span class="item"><span class="status-badge waiting"><span class="dot"></span>WAITING</span> <span class="desc">locktime not reached</span></span>
-          <span class="item"><span class="status-badge mempool"><span class="dot"></span>IN MEMPOOL</span> <span class="desc">broadcast, 0 conf</span></span>
-          <span class="item"><span class="status-badge confirmed"><span class="dot"></span>CONFIRMED</span> <span class="desc">on-chain</span></span>
+          <div class="tx-legend-title">Transaction states</div>
+          <span class="item"><span class="status-badge waiting"><span class="dot"></span>WAITING</span> <span class="desc">locktime not reached yet</span></span>
+          <span class="item"><span class="status-badge mempool"><span class="dot"></span>IN MEMPOOL</span> <span class="desc">broadcast, not yet confirmed</span></span>
+          <span class="item"><span class="status-badge confirmed"><span class="dot"></span>CONFIRMED</span> <span class="desc">confirmed on-chain</span></span>
           <span class="item"><span class="status-badge elsewhere"><span class="dot"></span>DONE ELSEWHERE</span> <span class="desc">completed by another executor</span></span>
-          <span class="item"><span class="status-badge failed"><span class="dot"></span>REJECTED</span> <span class="desc">broadcast failed</span></span>
         </div>
 
         <div class="tx-toolbar">
@@ -946,7 +990,6 @@
               <option>100</option>
             </select>
           </div>
-          <label class="check"><input type="checkbox" id="tx-show-failed" checked /> Show failed</label>
         </div>
 
         <div class="tx-scroll">
@@ -1173,10 +1216,12 @@ function resolveState(tx) {
   if (st === 1) return c > 0
     ? { ord: 2, cls: 'confirmed', label: 'CONFIRMED (' + c + ')', title: c + ' confirmation(s) on-chain' }
     : { ord: 1, cls: 'mempool', label: 'IN MEMPOOL', title: 'Broadcast — waiting for the first confirmation' };
-  if (c === -1) return { ord: 3, cls: 'elsewhere', label: 'DONE ELSEWHERE',
-    title: 'Another will executor already completed this transfer — a positive outcome for the heir' };
-  return { ord: 4, cls: 'failed', label: 'REJECTED',
-    title: 'Broadcast failed' + (tx.push_err ? ': ' + tx.push_err : '') };
+  // status === 2: our transaction did not go through. In this protocol that
+  // means another executor completed the transfer first (whether our tx was
+  // evicted from the mempool or its inputs were already spent). We only ever
+  // see our own transactions, so the exact reason lives in push_err (detail view).
+  return { ord: 3, cls: 'elsewhere', label: 'DONE ELSEWHERE',
+    title: 'Completed by another executor. Our tx did not go through; see details for the exact reason.' };
 }
 function stateBadge(tx) {
   const s = resolveState(tx);
@@ -1296,21 +1341,23 @@ async function selectNetwork(net) {
       document.getElementById('s-waiting').textContent      = s.waiting       ?? '—';
       document.getElementById('s-sent').textContent         = s.sent          ?? '—';
       document.getElementById('s-failed').textContent       = s.failed        ?? '—';
-      const conf = parseInt(s.confirmed_profit) || 0;
-      const missed = parseInt(s.missed_profit)   || 0;
-      const waiting = parseInt(s.waiting_profit) || 0;
-      const mempool = parseInt(s.mempool_profit) || 0;
-      document.getElementById('s-confirmed-profit').textContent     = formatSats(conf);
-      document.getElementById('s-total-executor-profit').textContent = formatSats(conf + missed);
-      document.getElementById('s-protocol-profit').textContent      = formatSats(waiting + mempool);
-      document.getElementById('s-total-profit').textContent         = formatSats(conf + missed + waiting + mempool);
+      // Disjoint fee buckets — each tx counts once; Total Tracked is their sum.
+      const earned    = parseInt(s.confirmed_profit) || 0;  // status=1, confirmed on-chain
+      const mempool   = parseInt(s.mempool_profit)   || 0;  // status=1, broadcast, unconfirmed
+      const scheduled = parseInt(s.waiting_profit)   || 0;  // status=0, locktime not reached
+      const missed    = parseInt(s.missed_profit)    || 0;  // status=2, not collected
+      document.getElementById('fee-earned').textContent    = formatSats(earned);
+      document.getElementById('fee-mempool').textContent   = formatSats(mempool);
+      document.getElementById('fee-scheduled').textContent = formatSats(scheduled);
+      document.getElementById('fee-missed').textContent    = formatSats(missed);
+      document.getElementById('fee-total').textContent     = formatSats(earned + mempool + scheduled + missed);
     } else {
-      ['s-total','s-waiting','s-sent','s-failed','s-confirmed-profit','s-total-executor-profit','s-protocol-profit','s-total-profit'].forEach(id => {
+      ['s-total','s-waiting','s-sent','s-failed','fee-earned','fee-mempool','fee-scheduled','fee-missed','fee-total'].forEach(id => {
         document.getElementById(id).textContent = '0';
       });
     }
   } catch (e) {
-    ['s-total','s-waiting','s-sent','s-failed','s-confirmed-profit','s-total-executor-profit','s-protocol-profit','s-total-profit'].forEach(id => {
+    ['s-total','s-waiting','s-sent','s-failed','fee-earned','fee-mempool','fee-scheduled','fee-missed','fee-total'].forEach(id => {
       document.getElementById(id).textContent = '?';
     });
   }
@@ -1476,7 +1523,7 @@ document.getElementById('search-txid').addEventListener('keydown', e => {
 });
 
 /* ---- Transactions toolbar wiring (filters reset to page 1) ---- */
-['tx-filter-network', 'tx-page-size', 'tx-show-failed'].forEach(id => {
+['tx-filter-network', 'tx-page-size'].forEach(id => {
   const el = document.getElementById(id);
   if (el) el.addEventListener('change', () => { txPage = 1; loadTransactions(); });
 });
@@ -1766,7 +1813,8 @@ async function loadTransactions() {
   const container = document.getElementById('tx-list-container');
   const pager = document.getElementById('tx-pager');
   const network = document.getElementById('tx-filter-network').value;
-  const showFailed = document.getElementById('tx-show-failed').checked;
+  // DONE ELSEWHERE (status=2) transactions are always shown — no more toggle.
+  const showFailed = true;
   const size = parseInt(document.getElementById('tx-page-size').value, 10) || 25;
   const search = document.getElementById('tx-search-input').value.trim();
   const offset = (txPage - 1) * size;
@@ -1881,11 +1929,12 @@ async function showTxDetail(txid) {
       '<div class="detail-row"><span class="detail-key">Locktime</span><span class="detail-val">' + formatLocktime(tx.locktime) + ' <span class="muted">' + (parseInt(tx.locktime,10) < 500000000 ? 'Block Number ' + Number(tx.locktime).toLocaleString() : '(' + tx.locktime + ')') + '</span></span></div>' +
       '<div class="detail-row"><span class="detail-key">Created</span><span class="detail-val">' + (tx.date_creation || '—') + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Updated</span><span class="detail-val">' + (tx.date_update || '—') + '</span></div>';
-    if (tx.status === 2 && parseInt(tx.confirmations,10) === -1) {
+    if (tx.status === 2) {
       html += '<div class="detail-row"><span class="detail-key">&nbsp;</span>' +
         '<span class="detail-val" style="color:var(--neutral);font-size:11px;">' +
-        'Another will executor already completed this transfer via the Bitcoin After Life network. ' +
-        'This is a positive outcome for the heir.</span></div>';
+        'Our transaction did not go through, so another executor most likely completed this transfer first ' +
+        '(a positive outcome for the heir). We only see our own transactions; the broadcast result below is the reason.' +
+        '</span></div>';
     }
     if (tx.push_err) {
       html += '<div class="detail-row"><span class="detail-key">Error</span><span class="detail-val" style="color:var(--error);">' + tx.push_err + '</span></div>';
