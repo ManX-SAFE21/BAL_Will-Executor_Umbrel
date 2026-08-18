@@ -9,10 +9,11 @@ It was forked/adapted from the upstream server at
 | Path | Purpose |
 |---|---|
 | `rust-src/` | Rust crate (workspace root for the two binaries) |
-| `rust-src/src/db.rs` | Shared DB layer (`open_db` with WAL+busy_timeout, `create_database`, insert helpers) |
-| `rust-src/src/xpub.rs` | xpub address derivation |
-| `rust-src/src/bin/bal-server.rs` | HTTP API (Hyper): receives pre-signed txs, validates fee output, stores in SQLite |
-| `rust-src/src/bin/bal-pusher.rs` | Block watcher: ZMQ `hashblock` → broadcasts matured txs, computes stats, reports to welist |
+| `rust-src/src/db.rs` | **Vanilla upstream** DB layer (`open_db` WAL+busy_timeout, `create_database`, insert helpers). *One* Umbrel line: the `confirmations` column (marked `UMBREL:`). |
+| `rust-src/src/validation.rs`, `xpub.rs`, `lib.rs` | **Vanilla upstream** (`lib.rs` has one extra line: `pub mod umbrel_api`). |
+| `rust-src/src/bin/bal-server.rs` | **Vanilla upstream** HTTP API (Actix Web): pushtxs/searchtx/info/stats + DoS protection. *One* Umbrel line in `main()`: `.configure(umbrel_api::configure)`. |
+| `rust-src/src/umbrel_api.rs` | **Umbrel layer** — all dashboard endpoints (txlist, txdetail, extended stats, backup/restore/merge, settings, branding). Self-contained Actix handlers; the ONLY file that carries our server-side additions. |
+| `rust-src/src/bin/bal-pusher.rs` | **Vanilla upstream** block watcher + one clearly-delimited Umbrel diff block (`===== UMBREL confirmation tracking =====`). |
 | `ui/index.html` | Dashboard (single-file, vanilla JS): tx list, confirmations, fee stats grid, settings |
 | `ui/nginx.conf` | Reverse proxy: static UI + `/api/*` and `/<chain>/*` → `bal-server:9137`; `no-store` on `/zmq-status.json` |
 | `docker/Dockerfile.rust` | Multi-stage build producing BOTH binaries (image `bal-umbrel-rust`) |
@@ -24,22 +25,25 @@ It was forked/adapted from the upstream server at
 
 ## Production deployment (Umbrel)
 
-Device: `umbrel@umbrel.local` (SSH). App dir: `/home/umbrel/umbrel/app-data/bal-umbrel/bal-umbrel/`.
+Device: `umbrel@umbrel.local` (SSH, key `~/.ssh/id_ed25519_umbrel_claude`).
+App dir: `/home/umbrel/umbrel/app-data/bal-umbrel/bal-umbrel/`.
 Data dir (SQLite + Ed25519 keys + backups): `/home/umbrel/umbrel/app-data/bal-umbrel/data/`.
-Docker requires `sudo`. Compose commands need `--env-file`:
+Docker requires `sudo`. The pusher reuses the image built by `bal-server` (no separate build).
+
+**Normal deploy** = the scripted, backed-up flow (see "Deploy" under the sync procedure):
+stage `staged-src.tar.gz` to `/home/umbrel/`, then `sudo bash deploy-update.sh` on the box.
+It rebuilds both images, recreates the 3 containers, smoke-tests, and prints a rollback
+timestamp. Manual one-offs still work:
 
 ```bash
-sudo docker compose --env-file .env -f docker-compose.yml build bal-server   # builds shared rust image
-sudo docker compose --env-file .env -f docker-compose.yml up -d --force-recreate bal-server bal-pusher
+sudo docker compose --env-file .env -f docker-compose.yml build bal-server bal-ui
+sudo docker compose --env-file .env -f docker-compose.yml up -d --force-recreate bal-server bal-pusher bal-ui
 sudo docker logs -f bal-umbrel-pusher
 ```
 
-The pusher reuses the image built by `bal-server` (no separate build step).
-
-**RULE: never hot-patch production without committing to git.** All fixes must be
-developed/committed here first, then copied to the device. (On 16-17 Jul 2026 several
-hotfixes lived only on the device and were almost lost when the local working copy
-was deleted — see commit "Sync production state from Umbrel".)
+**RULE: never hot-patch production without committing to git.** All fixes are
+developed/committed here first, then deployed. (On 16-17 Jul 2026 several hotfixes lived
+only on the device and were almost lost when the local working copy was deleted.)
 
 ## Networking notes (important)
 
@@ -65,7 +69,10 @@ was deleted — see commit "Sync production state from Umbrel".)
 ## Conventions
 
 - Two locktime modes (Bitcoin consensus): `< 500_000_000` = block height, `>=` = unix MTP.
-- `tbl_tx.status`: 0=waiting, 1=sent, 2=failed/double-spent (UI shows "OTHER EXECUTORS" badge).
+- `tbl_tx.status`: 0=waiting, 1=sent(broadcast), 2=failed. `confirmations`: -1 = evicted from
+  mempool. The dashboard collapses these into one **State**: WAITING / IN MEMPOOL / CONFIRMED /
+  DONE ELSEWHERE (every status=2 — live data shows they are all "won by a competing executor",
+  not genuine rejections). Logic lives in `resolveState()` in `ui/index.html`.
 - SQLite is shared between server and pusher: always open it via `open_db` (WAL + busy_timeout).
 - Avoid `unwrap()` in request/block-handling paths — a single bad row must never crash-loop a container.
 - Version string: `<upstream-version>-umbrel.<build>` in `rust-src/Cargo.toml`
@@ -77,71 +84,120 @@ was deleted — see commit "Sync production state from Umbrel".)
   release that isn't an upstream sync. Mirror the same string in
   `umbrel-app.yml` (`version:`) and the README badge.
 
-## Relationship with upstream
+## Architecture: vanilla upstream + isolated Umbrel layer
 
-Upstream (`bal-server`) released **0.3.0** (17 Jul 2026): Actix rewrite, rate limiting,
-shared `db.rs` (WAL), `validation.rs`, batch duplicate checks, transactional inserts,
-removed `backfill_network_fees`. Our tree predates it (Hyper server, own pusher features).
-Local divergences we intentionally keep: UI dashboard, confirmations/double-spend tracking,
-network-fee backfill (fixed to be crash-safe, runs once per process), weekly DB backups,
-ZMQ health endpoint, IPv6 welist reporting, Umbrel packaging.
-When syncing from upstream, port changes file-by-file; do NOT overwrite
-`ui/`, `docker/`, `scripts/`, `docker-compose*.yml`, `umbrel-app.yml`.
+Since **0.3.2-umbrel** the Rust tree tracks upstream's **Actix** architecture. (Before
+that we were on a forked Hyper server that had diverged heavily; the 0.3.2 sync re-based us
+onto upstream with a clean isolation boundary so future syncs are cheap.)
 
-**Contributions sent upstream** (as `SAFE21.io`):
-- PR [#1](https://bitcoin-after.life/gitea/bitcoinafterlife/bal-server/pulls/1) (19 Jul 2026,
-  pending review): `BAL_PUSHER_PREFER_IPV6` env-gated IPv6 pinning for welist reports +
-  `send_stats_report` error logging. Our local `resolve_preferring_ipv6` in bal-pusher.rs
-  is the same logic, always-on; if the PR merges, on the next upstream sync we switch to
-  the upstream implementation + `BAL_PUSHER_PREFER_IPV6=true` in the compose file.
-- Fork used for contributions: `SAFE21.io/bal-server` (local clone: `Desktop/bal-server-fork`).
+Design goal: **trivial future syncs.** Upstream `src/` files stay as close to vanilla as
+possible; everything Umbrel-specific lives in ONE new file plus a handful of marked lines.
 
-**Rate limiting**: applied at the nginx layer (`ui/nginx.conf`) mirroring upstream 0.3.0
-Actix values — `pushtxs` 1 r/s burst 3, `searchtx` 5 r/s burst 10, keyed on
-`CF-Connecting-IP` (traffic arrives via the Cloudflare tunnel). If we migrate to the
-upstream Actix server, drop the nginx limits to avoid double-throttling.
+**The complete list of Umbrel touch-points in the Rust tree — this IS the sync checklist:**
+
+| File | Umbrel change | Marker |
+|---|---|---|
+| `src/umbrel_api.rs` | entire file — all dashboard endpoints | (new file) |
+| `src/lib.rs` | `#[cfg(feature="server")] pub mod umbrel_api;` | comment above it |
+| `src/bin/bal-server.rs` | `.configure(bal_server::umbrel_api::configure)` in `main()` | `UMBREL packaging layer` |
+| `src/db.rs` | `ALTER TABLE tbl_tx ADD COLUMN confirmations …` | `UMBREL:` |
+| `src/bin/bal-pusher.rs` | confirmation-tracking block in `main_result()` | `===== UMBREL confirmation tracking =====` |
+| `Cargo.toml` | `version = "<upstream>-umbrel.<build>"` | — |
+
+Nothing else in `src/` diverges. The UI (`ui/`) and packaging (`docker/`, `scripts/`,
+compose, `umbrel-app.yml`) are separate layers that never touch upstream code.
+
+**How the layer plugs in:** `umbrel_api::configure(cfg)` registers our routes under
+non-colliding paths (`/txlist`, `/txdetail`, `/txstats/{net}`, `/backup*`, `/merge`,
+`/restore/{f}`, `/settings`, `/*-logo`). Handlers are **self-contained**: they read config
+from env (`BAL_SERVER_DB_FILE`) and open their own SQLite connection per request, so they
+never depend on the binary's private `AppState`. The dashboard reaches them via nginx `/api/*`.
+The extended stats live at `/txstats/{net}` (not upstream's `/{net}/stats`) so the upstream
+router is untouched — the UI calls `/api/txstats/<net>`.
+
+**Settings flow:** the UI writes `settings.json` (next to the DB) via `POST /settings`.
+Upstream config is immutable at runtime, so `entrypoint-server.sh` translates
+`settings.json` → `BAL_SERVER_BITCOIN_ADDRESS/FIXED_FEE/INFO` at startup (needs `jq`; the
+server auto-enables a network when its `_ADDRESS` env is set). A settings change therefore
+applies **on the next container restart**.
+
+**Rate limiting:** upstream's Actix global limiter keys on peer IP; behind nginx every
+request shares one bucket, so the strict default (1 r/s) starves the dashboard's load burst.
+`entrypoint-server.sh` raises it (`BAL_SERVER_ACTIX_PUSHTXS_PER_SEC=50`, `BURST=100`). Keep
+the nginx limits on `pushtxs`/`searchtx` (they see the real `CF-Connecting-IP`) as the
+primary DoS control; the Actix limiter is secondary.
+
+**Contributions sent upstream** (as `SAFE21.io`): PR
+[#1](https://bitcoin-after.life/gitea/bitcoinafterlife/bal-server/pulls/1) — IPv6 pinning
+for welist reports. As of 0.3.2 upstream's own pusher handles the welist/IPv6 logic, so we
+no longer carry a local `resolve_preferring_ipv6`; verify the IPv6 route still works after
+each sync (see networking notes).
 
 ## Upstream sync procedure (for future releases)
 
-Git layout prepared for tracking upstream releases:
+Divergence is now a fixed, tiny set of touch-points, so a sync is mostly mechanical.
 
-- `upstream` remote → `https://bitcoin-after.life/gitea/bitcoinafterlife/bal-server.git`
-- `upstream-mirror` branch (on origin) → tracks `upstream/main`, never commit onto it
-- upstream tags `v*` are mirrored to origin
-
-Check for new releases:
+Remotes/branches: `upstream` remote → `…/bal-server.git`; `upstream-mirror` branch mirrors
+`upstream/main`; `v*` tags mirrored.
 
 ```bash
 git fetch upstream --tags
-git log --oneline upstream-mirror..upstream/main   # new upstream commits
-git tag -l 'v*' --sort=-v:refname | head           # latest tags
-```
-
-Update the mirror after a fetch:
-
-```bash
+git log --oneline v0.3.2..upstream/main        # what's new since our current base
 git push origin upstream/main:upstream-mirror --tags
 ```
 
-When adopting a new upstream version:
+Adopt a new version `vX.Y.Z`:
 
-1. Read its CHANGELOG/release notes and the diff:
-   `git diff upstream-mirror..upstream/main --stat`
-2. Create a work branch from the target upstream tag, e.g.
-   `git checkout -b sync/v0.3.x v0.3.0`
-3. Port our Umbrel layer onto it (see "Local divergences" list above — that list IS the
-   porting checklist; keep it updated whenever we add one). Port file-by-file; never
-   bulk-overwrite `ui/`, `docker/`, `scripts/`, `docker-compose*.yml`, `umbrel-app.yml`.
-4. Commit each ported feature as a separate commit prefixed `[umbrel]`.
-5. Run the smoke test below, deploy, monitor one block cycle, then merge to `main`.
+1. On a work branch, pull the vanilla files wholesale from the tag (map into `rust-src/`):
+   ```bash
+   for f in src/db.rs src/validation.rs src/xpub.rs src/lib.rs \
+            src/bin/bal-server.rs src/bin/bal-pusher.rs Cargo.toml Cargo.lock; do
+     git show vX.Y.Z:$f > rust-src/$f
+   done
+   ```
+2. Re-apply the touch-points from the table above — they're small and marked. `git diff`
+   against the previous umbrel commit shows exactly what to re-add. `umbrel_api.rs` usually
+   needs NO change unless upstream altered the `tbl_tx` schema or the Actix handler API.
+3. Check the Dockerfile deps against upstream's Dockerfile (e.g. new system libs) and set
+   the Rust base image to upstream's version. Set `Cargo.toml` version to `X.Y.Z-umbrel.1`;
+   mirror in `umbrel-app.yml` + README badge.
+4. Compile-check (below), fix any drift, deploy, smoke-test, monitor one block, merge to `main`.
 
-### Smoke test (run after every upstream sync / deploy)
+### Build / compile-check without touching production
 
-- [ ] `docker logs bal-umbrel-server` — no panics, DB opens (WAL files exist in data/)
-- [ ] `docker logs bal-umbrel-pusher` — `connected`, `blocks: N` ≈ network tip, `waiting new blocks..`
-- [ ] `curl https://we.safe21.io/zmq-status.json` → `{"status":"ok"}`
-- [ ] `curl https://we.safe21.io/api/bitcoin/info` → address + base_fee + version
-- [ ] `curl https://we.safe21.io/api/bitcoin/stats` → fresh `report_date`, fee fields present
-- [ ] Dashboard loads, fee grid shows values, tx detail modal opens (network fee shown)
-- [ ] Next new block: pusher log shows `Report to welist(...) Sent: "ok"`
-- [ ] `docker ps` — all 3 containers Up, no restart loops
+The dev box has no working Rust toolchain and Docker needs `sudo`, so compile-check in a
+throwaway container with a **persistent target cache** (first run ~2 min, later runs seconds):
+
+```bash
+# stage rust-src/ to /home/umbrel/verify/rust-src, then:
+sudo docker run --rm -v /home/umbrel/verify/rust-src:/build -w /build rust:1.95-slim-bookworm \
+  bash -c 'apt-get update -qq && apt-get install -y -qq pkg-config libzmq3-dev libssl-dev build-essential && cargo check --bins'
+```
+
+### Deploy (full-source cutover)
+
+`scripts/deploy-update.sh` (run on the box) extracts a staged tarball
+(`/home/umbrel/staged-src.tar.gz` containing `rust-src/ ui/ scripts/ docker/`), backs up
+data + the current source (`src-before.tar.gz`), rebuilds both images, recreates the 3
+containers and smoke-tests. Rollback: `sudo bash rollback-update.sh <timestamp>`.
+
+- **GOTCHA — line endings:** shell scripts in the tarball MUST be LF. A CRLF shebang
+  (`#!/bin/bash\r`) makes the kernel look for `/bin/bash\r` → `exec … no such file or
+  directory` → crash-loop. Normalize with `tr -d '\r'` when building the tarball.
+- Do NOT put `docker-compose.yml` in the tarball: the device compose (`bal-umbrel-*`) is
+  set up per-device and differs from the repo's dev compose (`bal-will-*`).
+- The Dockerfile bakes the entrypoints in (`COPY scripts/`), so an entrypoint change needs a
+  rebuild — but Docker layer cache makes it fast when `rust-src/` is unchanged.
+
+### Smoke test (after every sync / deploy)
+
+- [ ] `curl …/api/version` → `X.Y.Z-umbrel.N` (JSON/text, not the nginx HTML fallback — HTML
+      means the server is down/crash-looping)
+- [ ] `curl …/api/txlist?limit=1` → `{total, txs:[{…, confirmations}]}`
+- [ ] `curl …/api/txstats/bitcoin` → array incl. `confirmed_profit` + `mempool_profit`
+- [ ] `curl …/zmq-status.json` → `{"status":"ok"}`
+- [ ] Dashboard: NETWORK STATS, fee grid, and PAYMENT ADDRESS all populated (no `?` / "Error
+      loading info" → those mean the Actix rate limiter is starving the load burst)
+- [ ] `docker logs bal-umbrel-pusher` — ZMQ `connected`, `blocks: N` ≈ tip; on a new block a
+      welist report is sent
+- [ ] `docker ps` — all 3 Up with stable uptime (not "Up 1 second" repeatedly = crash-loop)

@@ -1331,9 +1331,10 @@ async function selectNetwork(net) {
     document.getElementById('ni-address').textContent = 'Error loading info';
   }
 
-  // Load stats
+  // Load stats (extended: includes confirmed_profit/mempool_profit — served by
+  // the Umbrel layer at /txstats/<net>, not upstream's base /<net>/stats)
   try {
-    const r = await fetch('/api/' + net + '/stats');
+    const r = await fetch('/api/txstats/' + net);
     const j = await r.json();
     if (j && j.length > 0) {
       const s = j[0];
@@ -1486,15 +1487,13 @@ async function searchTx() {
   }
 
   try {
-    const r = await fetch('/api/searchtx', {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain' },
-      body: txid
-    });
+    // Use the Umbrel detail endpoint (includes `confirmations`, so the state
+    // badge matches the main list). Upstream's /searchtx does not return it.
+    const r = await fetch('/api/txdetail?txid=' + encodeURIComponent(txid));
 
     if (!r.ok) { notFoundEl.style.display = 'flex'; return; }
     const j = await r.json();
-    if (!j || !j.status) { notFoundEl.style.display = 'flex'; return; }
+    if (!j || !j.txid) { notFoundEl.style.display = 'flex'; return; }
 
     const st = resolveState(j);
     document.getElementById('tx-status-badge').innerHTML = stateBadge(j);
@@ -1502,13 +1501,7 @@ async function searchTx() {
     document.getElementById('tx-address').textContent = j.our_address || '—';
     document.getElementById('tx-fee').textContent     = j.our_fees ? formatSats(j.our_fees) : '—';
 
-    // Format nanosecond timestamp into a readable date
-    if (j.time) {
-      const ms = parseInt(j.time) / 1e6;
-      document.getElementById('tx-time').textContent = new Date(ms).toLocaleString();
-    } else {
-      document.getElementById('tx-time').textContent = '—';
-    }
+    document.getElementById('tx-time').textContent = j.date_creation || '—';
 
     document.getElementById('tx-hex').textContent = j.tx || '—';
     resultEl.classList.add('visible');

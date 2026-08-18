@@ -69,8 +69,17 @@ export BAL_SERVER_DB_FILE="${BAL_SERVER_DB_FILE:-/data/bal.db}"
 export BAL_SERVER_PUB_KEY_PATH="${PUB_KEY}"
 export BAL_SERVER_BIND_ADDRESS="${BAL_SERVER_BIND_ADDRESS:-0.0.0.0}"
 export BAL_SERVER_BIND_PORT="${BAL_SERVER_BIND_PORT:-9137}"
-export BAL_SERVER_INFO="${BAL_SERVER_INFO:-Bitcoin After Life Will Executor (Umbrel)}"
+export BAL_SERVER_INFO="${BAL_SERVER_INFO:-Bitcoin After Life — Will Executor (Umbrel)}"
 export BAL_SERVER_EXPOSE_STATS="${BAL_SERVER_EXPOSE_STATS:-true}"
+
+# Actix global rate limiter (upstream 0.3.x DoS protection). The limiter keys on
+# the peer IP, but behind nginx every request shares one bucket, and the SAFE21
+# dashboard fires a burst of ~10-15 requests on load. The strict upstream default
+# (1 req/s, burst 3) would starve the UI (stats/info fail to load). We loosen the
+# global limit here; nginx already rate-limits the sensitive public endpoints
+# (pushtxs/searchtx) at the proxy layer, so DoS protection is preserved.
+export BAL_SERVER_ACTIX_PUSHTXS_PER_SEC="${BAL_SERVER_ACTIX_PUSHTXS_PER_SEC:-50}"
+export BAL_SERVER_ACTIX_PUSHTXS_BURST="${BAL_SERVER_ACTIX_PUSHTXS_BURST:-100}"
 
 # Per-network: map from generic Umbrel env vars to BAL-specific ones
 # Mainnet
@@ -85,6 +94,23 @@ export BAL_SERVER_TESTNET_FIXED_FEE="${BAL_SERVER_TESTNET_FIXED_FEE:-50000}"
 # Regtest
 export BAL_SERVER_REGTEST_ADDRESS="${BAL_SERVER_REGTEST_ADDRESS:-}"
 export BAL_SERVER_REGTEST_FIXED_FEE="${BAL_SERVER_REGTEST_FIXED_FEE:-0}"
+
+# --- 3b. Bridge dashboard settings (settings.json) over the env config ---
+# The dashboard (umbrel_api set_settings) persists the user's bitcoin address,
+# fee and server description to settings.json next to the database. Upstream's
+# server config is immutable at runtime, so here we translate those persisted
+# values into the env vars the server reads at startup. Consequence: a settings
+# change made in the UI takes effect on the next container restart.
+SETTINGS_FILE="$(dirname "${BAL_SERVER_DB_FILE}")/settings.json"
+if [ -f "${SETTINGS_FILE}" ] && command -v jq >/dev/null 2>&1; then
+  s_addr="$(jq -r '.address // empty' "${SETTINGS_FILE}" 2>/dev/null)"
+  s_fee="$(jq -r '.fee // empty'     "${SETTINGS_FILE}" 2>/dev/null)"
+  s_info="$(jq -r '.info // empty'   "${SETTINGS_FILE}" 2>/dev/null)"
+  [ -n "${s_addr}" ] && export BAL_SERVER_BITCOIN_ADDRESS="${s_addr}"
+  [ -n "${s_fee}" ] && [ "${s_fee}" != "0" ] && export BAL_SERVER_BITCOIN_FIXED_FEE="${s_fee}"
+  [ -n "${s_info}" ] && export BAL_SERVER_INFO="${s_info}"
+  log "Applied settings.json over env (address/fee/info)"
+fi
 
 log "Starting bal-server on ${BAL_SERVER_BIND_ADDRESS}:${BAL_SERVER_BIND_PORT}…"
 log "Database: ${BAL_SERVER_DB_FILE}"

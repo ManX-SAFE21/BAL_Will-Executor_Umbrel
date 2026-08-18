@@ -2,7 +2,7 @@
 
 A **Will Executor (Dead Man's Switch)** for Bitcoin: store pre-signed transactions with a future locktime and broadcast them automatically when the time comes.
 
-> **v0.2.3-umbrel.13** — Full package with web dashboard, Settings UI, Backup & Restore, weekly automatic backups, Cloudflare-ready, Umbrel App Store ready, custom branding.
+> **v0.3.2-umbrel.1** — Rebased onto upstream's Actix 0.3.2 core (security hardening + DoS protection) with the SAFE21 dashboard isolated in a single `umbrel_api.rs` layer for easy future syncs. Full package: web dashboard, Settings UI, Backup & Restore, weekly automatic backups, Cloudflare-ready, Umbrel App Store ready, custom branding.
 >
 > Version scheme: `<upstream bal-server version>-umbrel.<packaging build>`. The
 > first part tracks the upstream release this code is derived from (currently
