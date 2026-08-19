@@ -241,6 +241,32 @@
     .stat-value.orange { color: var(--accent); }
     .stat-value.green  { color: var(--success); }
     .stat-value.yellow { color: var(--warning); }
+
+    /* ---- Status row: ZMQ banner (left) + block heartbeat (right) ---- */
+    .status-row { display: flex; gap: 12px; align-items: stretch; margin-bottom: 16px; }
+    .status-row-left { flex: 2.3; min-width: 0; display: flex; flex-direction: column; }
+    .status-row-left .alert { margin-bottom: 0; flex: 1; align-items: center; }
+    .block-hero {
+      flex: 1; min-width: 0; margin-bottom: 0;
+      display: flex; flex-direction: column; justify-content: center;
+      text-align: center; padding: 12px 16px;
+    }
+    .block-hero-label {
+      font-size: 13px; letter-spacing: 0.08em; text-transform: uppercase;
+      color: var(--text-muted); margin-bottom: 6px;
+    }
+    .block-hero-num {
+      font-family: var(--mono); font-size: 34px; font-weight: 700; line-height: 1;
+      color: var(--success); letter-spacing: 0.01em;
+      transition: color 0.3s;
+    }
+    .block-hero-sub { margin-top: 7px; font-size: 14px; color: var(--text-muted); }
+    .block-hero.stale .block-hero-num { color: var(--warning); }
+    .block-hero.dead  .block-hero-num { color: var(--error); }
+    @media (max-width: 600px) {
+      .status-row { flex-direction: column; }
+      .block-hero-num { font-size: 30px; }
+    }
     .stat-value.red    { color: var(--error); }
     .stat-footnote { font-size: 20px; color: var(--text-muted); margin-top: 8px; }
 
@@ -663,6 +689,9 @@
     <div id="panel-dashboard" class="panel active">
       <h2>Server <span>Status</span></h2>
 
+      <!-- Status row: ZMQ banner (left) + synced Bitcoin block (right) -->
+      <div class="status-row">
+        <div class="status-row-left">
       <!-- ZMQ banners (shown dynamically based on zmq-status.json) -->
       <div id="zmq-ok" class="alert success" style="display:none">
         <div class="alert-icon">&#10003;</div>
@@ -688,6 +717,17 @@
           On Umbrel: Settings → Bitcoin Node → Advanced → Edit Config
         </div>
       </div>
+
+        </div><!-- /status-row-left -->
+
+        <!-- Block-height heartbeat: a big, auto-advancing number = live proof
+             the will-executor is watching new Bitcoin blocks. -->
+        <div class="card block-hero" id="block-hero">
+          <div class="block-hero-label">Synced block · <span id="block-net">bitcoin</span></div>
+          <div class="block-hero-num" id="block-height">—</div>
+          <div class="block-hero-sub" id="block-age">waiting…</div>
+        </div>
+      </div><!-- /status-row -->
 
       <!-- Server info card -->
       <div class="card" id="server-info-card">
@@ -2125,17 +2165,54 @@ async function saveBackupConfig() {
   }
 }
 
+/* ---- Block-height heartbeat (live proof the pusher is watching blocks) ---- */
+async function updateBlockHeight() {
+  const hero = document.getElementById('block-hero');
+  const num = document.getElementById('block-height');
+  const sub = document.getElementById('block-age');
+  if (!hero || !num || !sub) return;
+  try {
+    const r = await fetch('/api/blockheight');
+    const j = await r.json();
+    if (!j || j.height === null || j.height === undefined) {
+      num.textContent = '—';
+      sub.textContent = 'no data from bal-pusher yet';
+      hero.className = 'card block-hero dead';
+      return;
+    }
+    num.textContent = Number(j.height).toLocaleString();
+    if (j.network) document.getElementById('block-net').textContent = j.network;
+    if (j.updated_at) {
+      const ageSec = Math.max(0, Math.floor(Date.now() / 1000) - Number(j.updated_at));
+      const m = Math.floor(ageSec / 60);
+      sub.textContent = m < 1 ? 'last block just now' : ('last block ' + m + ' min ago');
+      // Bitcoin blocks average ~10 min; a long gap may just be variance, but a
+      // very long one suggests the pusher stopped watching.
+      hero.className = 'card block-hero' +
+        (ageSec > 5400 ? ' dead' : ageSec > 3600 ? ' stale' : '');
+    } else {
+      sub.textContent = '';
+      hero.className = 'card block-hero';
+    }
+  } catch (e) {
+    /* transient — keep the last shown value */
+  }
+}
+
 /* ---- Bootstrap ---- */
 (async function init() {
   const saved = sessionStorage.getItem('activeTab');
   if (saved && saved !== 'dashboard') showPanel(saved);
   await loadVersion();
   await checkZmqStatus();
+  await updateBlockHeight();
   await probeNetworks();
   await loadTorAddress();
   await loadSettings();
   await loadTransactions();
   await updateHeaderBranding();
+  // Poll the block height so the number advances live.
+  setInterval(updateBlockHeight, 20000);
 })();
 </script>
 </body>

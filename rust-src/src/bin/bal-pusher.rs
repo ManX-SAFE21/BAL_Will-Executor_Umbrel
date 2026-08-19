@@ -25,7 +25,9 @@ use reqwest::Client as rClient;
 use std::net::SocketAddr;
 use url::Url;
 
-const LOCKTIME_THRESHOLD: i64 = 5000000;
+// BIP-65: locktime values below this are block heights, at or above are UNIX
+// timestamps. (Ported from upstream fix f106bee — was erroneously 5_000_000.)
+const LOCKTIME_THRESHOLD: i64 = 500_000_000;
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 #[derive(Debug, Clone, Serialize, Deserialize)]
 struct MyConfig {
@@ -210,6 +212,27 @@ async fn main_result(cfg: &MyConfig, network_params: &NetworkParams) -> Result<(
             info!("blocks: {}", bcinfo.blocks);
             debug!("best block hash: {}", bcinfo.best_block_hash);
 
+            // UMBREL: publish the current chain tip for the dashboard heartbeat.
+            // Written next to the DB (shared /data volume); umbrel_api serves it at
+            // /api/blockheight and the UI shows a big, auto-advancing block number —
+            // live proof the executor is watching new blocks. Runs at startup and
+            // on every block (main_result is called for both).
+            {
+                let ts = std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .map(|d| d.as_secs())
+                    .unwrap_or(0);
+                let dir = std::path::Path::new(&cfg.db_file)
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| std::path::PathBuf::from("."));
+                let json = format!(
+                    "{{\"height\":{},\"network\":\"{}\",\"updated_at\":{}}}",
+                    bcinfo.blocks, network_params.db_field, ts
+                );
+                let _ = std::fs::write(dir.join("block-status.json"), json);
+            }
+
             let average_time = bcinfo.median_time;
             let db = match open_db(&cfg.db_file) {
                 Ok(c) => c,
@@ -220,7 +243,11 @@ async fn main_result(cfg: &MyConfig, network_params: &NetworkParams) -> Result<(
             };
             info!("db open {}", &cfg.db_file);
 
-            let sqlquery = "SELECT  * FROM tbl_tx WHERE network = :network AND status = :status AND ( locktime < :bestblock_height  OR locktime > :locktime_threshold AND locktime < :bestblock_time);";
+            // UMBREL: guard `AND tx IS NOT NULL AND tx != ''`. A row with no raw
+            // tx can never be broadcast, and upstream reads `tx` with the panicking
+            // `row.read::<&str>` — a NULL/empty value (e.g. a leftover placeholder
+            // row with locktime=0, which is always "mature") crash-loops the pusher.
+            let sqlquery = "SELECT  * FROM tbl_tx WHERE network = :network AND status = :status AND tx IS NOT NULL AND tx != '' AND ( locktime < :bestblock_height  OR locktime > :locktime_threshold AND locktime < :bestblock_time);";
             let query_tx = match db.prepare(sqlquery) {
                 Ok(q) => q.into_iter(),
                 Err(e) => {

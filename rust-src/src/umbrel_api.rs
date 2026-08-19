@@ -778,6 +778,16 @@ async fn custom_logo() -> impl Responder {
     }
 }
 
+// GET /blockheight — current chain tip published by the pusher (heartbeat).
+async fn blockheight() -> impl Responder {
+    match fs::read_to_string(data_dir().join("block-status.json")) {
+        Ok(s) => HttpResponse::Ok()
+            .content_type("application/json")
+            .body(s),
+        Err(_) => HttpResponse::Ok().json(serde_json::json!({ "height": null })),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // Route registration — the single hook upstream `main()` calls.
 // ---------------------------------------------------------------------------
@@ -806,5 +816,6 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         )
         .service(web::resource("/upload-logo").route(web::post().to(upload_logo)))
         .service(web::resource("/remove-logo").route(web::post().to(remove_logo)))
-        .service(web::resource("/custom-logo").route(web::get().to(custom_logo)));
+        .service(web::resource("/custom-logo").route(web::get().to(custom_logo)))
+        .service(web::resource("/blockheight").route(web::get().to(blockheight)));
 }

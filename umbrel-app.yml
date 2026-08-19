@@ -4,7 +4,7 @@ name: Bitcoin After Life Will Executor
 tagline: A Will Executor for Bitcoin — store pre-signed transactions with a future locktime
 icon: https://we.safe21.io/icon.svg
 category: Bitcoin
-version: "0.3.2-umbrel.1"
+version: "0.3.2-umbrel.2"
 port: 9140
 tor: true
 description: >-

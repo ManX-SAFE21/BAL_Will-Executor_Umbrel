@@ -72,14 +72,16 @@ export BAL_SERVER_BIND_PORT="${BAL_SERVER_BIND_PORT:-9137}"
 export BAL_SERVER_INFO="${BAL_SERVER_INFO:-Bitcoin After Life — Will Executor (Umbrel)}"
 export BAL_SERVER_EXPOSE_STATS="${BAL_SERVER_EXPOSE_STATS:-true}"
 
-# Actix global rate limiter (upstream 0.3.x DoS protection). The limiter keys on
-# the peer IP, but behind nginx every request shares one bucket, and the SAFE21
-# dashboard fires a burst of ~10-15 requests on load. The strict upstream default
-# (1 req/s, burst 3) would starve the UI (stats/info fail to load). We loosen the
-# global limit here; nginx already rate-limits the sensitive public endpoints
+# Actix global rate limiter (upstream 0.3.x DoS protection). NOTE: despite the
+# name, PER_SEC maps to Actix's `seconds_per_request` — i.e. SECONDS BETWEEN
+# requests, not requests/second. So keep it at 1 (= 1 req/s sustained, the
+# floor) and instead raise the BURST: the limiter keys on peer IP, and behind
+# nginx/cloudflared every request shares ONE bucket, while the SAFE21 dashboard
+# fires ~15-20 requests per page load (it does not poll). A large burst absorbs
+# several page loads; nginx still rate-limits the sensitive public endpoints
 # (pushtxs/searchtx) at the proxy layer, so DoS protection is preserved.
-export BAL_SERVER_ACTIX_PUSHTXS_PER_SEC="${BAL_SERVER_ACTIX_PUSHTXS_PER_SEC:-50}"
-export BAL_SERVER_ACTIX_PUSHTXS_BURST="${BAL_SERVER_ACTIX_PUSHTXS_BURST:-100}"
+export BAL_SERVER_ACTIX_PUSHTXS_PER_SEC="${BAL_SERVER_ACTIX_PUSHTXS_PER_SEC:-1}"
+export BAL_SERVER_ACTIX_PUSHTXS_BURST="${BAL_SERVER_ACTIX_PUSHTXS_BURST:-300}"
 
 # Per-network: map from generic Umbrel env vars to BAL-specific ones
 # Mainnet
