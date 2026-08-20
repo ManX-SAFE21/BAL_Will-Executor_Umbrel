@@ -634,13 +634,15 @@
     .tx-table tr { cursor: pointer; transition: background 0.15s; }
     .tx-table tr:hover { background: var(--surface2); }
     .tx-table .mono { font-family: var(--mono); font-size: 11px; }
+    .tx-table td.tx-txid { white-space: nowrap; }
+    .tx-table td.tx-created { color: var(--text); white-space: nowrap; }
+    .tx-table td.tx-locktime { color: var(--success); font-size: 13px; white-space: nowrap; }
     .tx-table .right { text-align: right; }
     .tx-table .center { text-align: center; }
     .tx-table .muted { color: var(--text-muted); font-size: 11px; }
     .tx-table tr.locktime-separator td { padding: 6px 6px; border-bottom: none; cursor: default; text-align: center; }
     .tx-table tr.locktime-separator:hover { background: transparent; }
     .tx-table .sep-label { color: var(--text-muted); font-size: 10px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.6; }
-
     /* ---- Detail modal ---- */
     #detail-modal .modal-box { max-width: 700px; max-height: 85vh; border-color: var(--accent); display: flex; flex-direction: column; }
     #detail-modal .modal-box h3 { color: var(--accent); flex-shrink: 0; }
@@ -658,6 +660,7 @@
     @media (max-width: 600px) {
       main { padding: 16px 14px; }
       header { padding: 0 14px; }
+      .tx-scroll { overflow-x: auto; }
       .stat-grid-top { grid-template-columns: 1fr 1fr; }
       .stat-grid-top .stat-box.highlight { grid-column: 1 / -1; }
       .stat-grid-fees { grid-template-columns: 1fr 1fr; }
@@ -1277,6 +1280,12 @@ function shortTxid(txid) {
 }
 
 /* ---- Utility: format locktime (block height or timestamp) ---- */
+/* ---- Utility: format the DB creation timestamp (drop the seconds) ---- */
+function formatCreated(s) {
+  if (!s) return '\u2014';
+  return String(s).slice(0, 16); // "YYYY-MM-DD HH:MM"
+}
+
 function formatLocktime(lt) {
   if (lt === null || lt === undefined || lt === '') return '\u2014';
   const n = parseInt(lt, 10);
@@ -1879,6 +1888,7 @@ async function loadTransactions() {
     }
 
     const cols = [
+      ['date_creation', 'Created', ''],
       ['txid', 'TXID', ''], ['network', 'Network', ''], ['our_fees', 'Server Fee', 'right'],
       ['state', 'State', ''], ['locktime', 'Locktime', 'right']
     ];
@@ -1890,11 +1900,12 @@ async function loadTransactions() {
     }).join('') + '</tr></thead>';
     const body = '<tbody>' + txs.map(tx =>
       '<tr onclick="showTxDetail(\'' + tx.txid + '\')">' +
-        '<td class="mono" title="' + (tx.txid || '') + '">' + shortTxid(tx.txid) + '</td>' +
+        '<td class="mono tx-created">' + formatCreated(tx.date_creation) + '</td>' +
+        '<td class="mono tx-txid" title="' + (tx.txid || '') + '">' + shortTxid(tx.txid) + '</td>' +
         '<td>' + (tx.network || '—') + '</td>' +
         '<td class="right">' + formatSats(tx.our_fees || 0) + '</td>' +
         '<td>' + stateBadge(tx) + '</td>' +
-        '<td class="right mono">' + formatLocktime(tx.locktime) + '</td>' +
+        '<td class="right mono tx-locktime">' + formatLocktime(tx.locktime) + '</td>' +
       '</tr>').join('') + '</tbody>';
     container.innerHTML = '<table class="tx-table">' + head + body + '</table>';
 
