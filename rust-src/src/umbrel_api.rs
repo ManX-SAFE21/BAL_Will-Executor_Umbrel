@@ -732,6 +732,31 @@ async fn set_settings(body: web::Bytes) -> impl Responder {
     }
 }
 
+// POST /restart-server — explicit, admin-triggered restart so a settings
+// change (address/fee/info) takes effect. Upstream reads its config once at
+// startup from env vars, and entrypoint-server.sh only re-derives those env
+// vars from settings.json on container start — so a running server keeps the
+// old values until it restarts.
+//
+// SAFE BY DESIGN: this does NOT touch the Docker socket or spawn any process
+// (that would need host-level Docker access — root-equivalent, and something
+// this container must never have). It only exits the current process; Docker
+// Compose's `restart: unless-stopped` policy on bal-server brings it back up
+// within a couple of seconds, at which point the entrypoint re-reads the
+// fresh settings.json. No new privileges, no new attack surface.
+//
+// The exit is delayed briefly so this handler's "restarting" response reaches
+// the client before the process dies (an immediate exit would race the
+// in-flight HTTP response and the client would see a connection reset).
+async fn restart_server() -> impl Responder {
+    log::warn!("umbrel: restart-server requested — exiting for Docker to restart this container");
+    actix_web::rt::spawn(async {
+        actix_web::rt::time::sleep(std::time::Duration::from_millis(400)).await;
+        std::process::exit(0);
+    });
+    HttpResponse::Ok().json(serde_json::json!({"status": "restarting"}))
+}
+
 async fn upload_logo(body: web::Bytes) -> impl Responder {
     if body.len() > 204800 {
         return HttpResponse::BadRequest().body("Logo too large. Maximum 200KB.");
@@ -814,6 +839,7 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
                 .route(web::get().to(get_settings))
                 .route(web::post().to(set_settings)),
         )
+        .service(web::resource("/restart-server").route(web::post().to(restart_server)))
         .service(web::resource("/upload-logo").route(web::post().to(upload_logo)))
         .service(web::resource("/remove-logo").route(web::post().to(remove_logo)))
         .service(web::resource("/custom-logo").route(web::get().to(custom_logo)))

@@ -1826,7 +1826,7 @@ async function confirmSettings() {
       body: JSON.stringify({ address: addr, fee: fee, info: info, logo_text: logoText })
     });
     if (r.ok) {
-      showSettingsMsg('\u2713 Settings saved.', 'ok');
+      showSettingsRestartPrompt();
       await updateHeaderBranding();
     } else {
       const text = await r.text();
@@ -1843,6 +1843,53 @@ function showSettingsMsg(text, cls) {
   const el = document.getElementById('settings-result');
   el.textContent = text;
   el.className = 'result-box visible ' + cls;
+}
+
+/* Settings are persisted immediately, but the running server only reads them
+   from env at startup — so they don't take effect until it restarts. Say so
+   honestly instead of implying the change is already live, and offer an
+   explicit, one-click restart (never automatic). */
+function showSettingsRestartPrompt() {
+  const el = document.getElementById('settings-result');
+  el.innerHTML =
+    '✓ Settings saved. <strong>The server needs a restart for this to take effect</strong> ' +
+    '— it keeps running with the old values until then.<br/>' +
+    '<button class="btn btn-secondary" style="margin-top:8px" onclick="restartServer()">Restart server now</button>';
+  el.className = 'result-box visible ok';
+}
+
+async function restartServer() {
+  const el = document.getElementById('settings-result');
+  el.innerHTML = '<span class="spinner"></span> Restarting server…';
+  el.className = 'result-box visible';
+  try {
+    await fetch('/api/restart-server', { method: 'POST' });
+  } catch (e) {
+    // Expected: the connection drops as the process exits — not an error.
+  }
+  // Poll until the server answers again with the fresh settings applied.
+  let tries = 0;
+  const poll = setInterval(async () => {
+    tries++;
+    try {
+      const r = await fetch('/api/version', { cache: 'no-store' });
+      if (r.ok) {
+        clearInterval(poll);
+        el.innerHTML = '✓ Server restarted. New settings are now active.';
+        el.className = 'result-box visible ok';
+        loadSettings();
+        probeNetworks();
+        return;
+      }
+    } catch (e) {
+      // still restarting
+    }
+    if (tries >= 25) { // ~25s — generous for a container restart
+      clearInterval(poll);
+      el.innerHTML = '⚠ Still waiting for the server to come back. Reload the page in a moment.';
+      el.className = 'result-box visible err';
+    }
+  }, 1000);
 }
 
 /* ---- Transaction list: server-side search, sort & pagination ---- */
