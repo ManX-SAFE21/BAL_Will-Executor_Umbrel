@@ -45,7 +45,13 @@ sudo docker logs -f bal-umbrel-pusher
 developed/committed here first, then deployed. (On 16-17 Jul 2026 several hotfixes lived
 only on the device and were almost lost when the local working copy was deleted.)
 
-**Boot resilience — `bal-umbrel.service`:** this app is deployed manually, NOT through
+### Outage of 12 Sep 2026 — two independent failures, one trigger
+
+An umbrelOS update rebooted the device on **10 Sep ~13:15**. That single event broke the
+app in *two* unrelated ways, which had to be fixed separately. If the app ever goes down
+after an OS update, check both.
+
+**1. Boot resilience — `bal-umbrel.service`:** this app is deployed manually, NOT through
 Umbrel's official App Store install flow, so it is not in `umbreld`'s own app registry.
 On 12 Sep 2026, a device reboot left every officially-installed app running fine, but the
 `bal-umbrel-*` containers were fully removed (not just stopped) and never recreated —
@@ -62,9 +68,33 @@ if a future reboot causes another full outage, check this service first
 (`systemctl status bal-umbrel.service`, `journalctl -xeu bal-umbrel.service`) before
 assuming a code regression.
 
+**2. Public domain (Cloudflare Tunnel) — `bal-ui` must join `umbrel_main_network`:**
+symptom is asymmetric and is the giveaway — `http://umbrel.local:9140` returns 200 while
+`https://we.safe21.io` returns **502 Bad Gateway** from Cloudflare. The tunnel connector
+(`cloudflared_connector_1`, part of the separate cloudflared app) reaches this dashboard
+**by container name**, so the two must share a Docker network. `bal-ui` used to be on
+`bal-net` only — a project-scoped network that `docker compose down/up` destroys and
+recreates. Any foreign container attached to it (the connector, attached by hand) is
+silently dropped on recreation, and never re-attached: hence the 502 after the reboot.
+Fix (already applied, in `docker-compose.umbrel.yml`): `bal-ui` now also joins
+`umbrel_main_network`, which is declared `external: true` and is where every Umbrel app —
+the connector included — permanently lives. Compose never destroys it, so the tunnel path
+survives reboots, `deploy-update.sh`, and any `--force-recreate`.
+Verified on 12 Sep 2026 by removing the manual attachment
+(`docker network disconnect bal-umbrel_bal-net cloudflared_connector_1`) and confirming
+the public domain still served the dashboard — proving traffic flows over the stable
+network, not the old hand-made link. **Do not "fix" a future 502 with
+`docker network connect …` again** — that is the band-aid this replaced; check instead
+that `bal-ui` is really on `umbrel_main_network`:
+`sudo docker network inspect umbrel_main_network --format '{{range .Containers}}{{.Name}} {{end}}'`
+should list `bal-umbrel-ui` (and `bal-umbrel-pusher`, which needs it for the Bitcoin node).
+
 ## Networking notes (important)
 
 - The pusher must join `umbrel_main_network` to reach the Bitcoin node (`APP_BITCOIN_NODE_IP`, typically `10.21.21.8`).
+- **`bal-ui` must also join `umbrel_main_network`** — that is how the Cloudflare Tunnel
+  connector resolves it by container name. Removing it breaks the public domain with a
+  502 while `umbrel.local:9140` keeps working. See the 12 Sep 2026 outage notes above.
 - The pusher also joins `bal-v6`, an **IPv6-enabled bridge** (ULA `fd00:ba1:e21::/64`, Docker NAT66).
   Reason: the welist aggregator (`welist.bitcoin-after.life`) is **unreachable over IPv4**
   from the Umbrel network (connections stall after TCP handshake); IPv6 works.

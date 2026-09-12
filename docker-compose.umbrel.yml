@@ -156,6 +156,15 @@ services:
 
     networks:
       - bal-net
+      # umbrel_main_network is declared `external: true`, so Docker Compose
+      # never destroys it. The Cloudflare Tunnel connector (cloudflared_
+      # connector_1, another Umbrel app) permanently lives there and reaches
+      # this dashboard by container name. Joining it here is what makes the
+      # public domain survive container recreation: bal-net is project-scoped
+      # and gets torn down and rebuilt on every `compose down/up`, which
+      # silently detaches any foreign container manually attached to it.
+      # (Outage of 12 Sep 2026 — see AGENTS.md.)
+      - umbrel_main_network
 
 # =============================================================================
 # Networks
