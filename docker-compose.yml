@@ -85,6 +85,11 @@ services:
       - internal
       - default
       - umbrel_main_network
+      # IPv6-enabled bridge: the welist aggregator (welist.bitcoin-after.life)
+      # is unreachable over IPv4 from the Umbrel network (connections stall
+      # after the TCP handshake); IPv6 works. Docker performs NAT66 for this
+      # ULA range automatically. Do NOT remove — see AGENTS.md networking notes.
+      - bal-v6
 
   # ---------------------------------------------------------------------------
   # ui: Nginx web dashboard
@@ -139,6 +144,16 @@ networks:
     driver: bridge
   umbrel_main_network:
     external: true
+
+  # IPv6-enabled bridge so the pusher can reach the welist aggregator, whose
+  # IPv4 route is broken on the Umbrel network (IPv6 works). Docker performs
+  # NAT66 for this ULA range automatically.
+  bal-v6:
+    driver: bridge
+    enable_ipv6: true
+    ipam:
+      config:
+        - subnet: fd00:ba1:e21::/64
 
 volumes:
   tor-data:
