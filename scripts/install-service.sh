@@ -12,11 +12,17 @@
 set -euo pipefail
 
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-SERVICE_FILE=/etc/systemd/system/bal-will.service
+SERVICE_FILE=/etc/systemd/system/bal-umbrel.service
 
 echo "[install-service] App directory: $APP_DIR"
 
-# Write the service unit
+# WHY THIS EXISTS: this app is deployed manually (not through Umbrel's official
+# App Store install flow), so it is not in umbreld's own app registry. On a
+# reboot or OS-level update, umbreld reconciles ITS registered apps' containers
+# but has no knowledge of this one — its containers can end up fully removed
+# (not just stopped) and never recreated. This systemd unit is an independent
+# safety net: it brings the compose stack back up on every boot, using the
+# exact same flags deploy-update.sh uses, regardless of what umbreld does.
 cat > "$SERVICE_FILE" << EOF
 [Unit]
 Description=Bitcoin After Life Will Executor
@@ -27,16 +33,16 @@ After=umbrel.service docker.service
 Type=oneshot
 RemainAfterExit=yes
 WorkingDirectory=${APP_DIR}
-ExecStart=/usr/bin/docker compose up -d
-ExecStop=/usr/bin/docker compose down
+ExecStart=/usr/bin/docker compose --env-file .env -f docker-compose.yml up -d
+ExecStop=/usr/bin/docker compose --env-file .env -f docker-compose.yml down
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
 systemctl daemon-reload
-systemctl enable bal-will.service
-systemctl start bal-will.service
+systemctl enable bal-umbrel.service
+systemctl start bal-umbrel.service
 
 echo "[install-service] Done."
-systemctl status bal-will.service --no-pager
+systemctl status bal-umbrel.service --no-pager

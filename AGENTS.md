@@ -45,6 +45,23 @@ sudo docker logs -f bal-umbrel-pusher
 developed/committed here first, then deployed. (On 16-17 Jul 2026 several hotfixes lived
 only on the device and were almost lost when the local working copy was deleted.)
 
+**Boot resilience — `bal-umbrel.service`:** this app is deployed manually, NOT through
+Umbrel's official App Store install flow, so it is not in `umbreld`'s own app registry.
+On 12 Sep 2026, a device reboot left every officially-installed app running fine, but the
+`bal-umbrel-*` containers were fully removed (not just stopped) and never recreated —
+`umbreld` only reconciles apps it knows about; Docker's own `restart: unless-stopped`
+wasn't enough because the containers didn't merely stop, they were gone.
+Fix: `sudo bash scripts/install-service.sh` (run from the real app directory — it derives
+`APP_DIR` from its own path, so running a copy staged elsewhere, e.g. `/home/umbrel/`,
+silently writes the wrong `WorkingDirectory` and the unit fails) installs
+`/etc/systemd/system/bal-umbrel.service`, which runs
+`docker compose --env-file .env -f docker-compose.yml up -d` after `umbrel.service` +
+`docker.service` on every boot — independent of `umbreld`. Verify after any reinstall:
+`systemctl is-enabled bal-umbrel.service` → `enabled`. This should already be installed;
+if a future reboot causes another full outage, check this service first
+(`systemctl status bal-umbrel.service`, `journalctl -xeu bal-umbrel.service`) before
+assuming a code regression.
+
 ## Networking notes (important)
 
 - The pusher must join `umbrel_main_network` to reach the Bitcoin node (`APP_BITCOIN_NODE_IP`, typically `10.21.21.8`).
