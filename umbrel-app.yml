@@ -45,7 +45,8 @@ description: >-
   - Electrum plugin compatible: double-slash normalization in nginx.
   - Three-container architecture: server (Rust HTTP API), pusher
     (Rust ZMQ watcher), ui (Nginx reverse proxy).
-  - Auto-start via systemd service (survives Umbrel OS reboots).
+  - Auto-start on boot via umbrelOS's persistent pre-start hook (survives
+    reboots, power cuts and OS updates).
   - Persistent SQLite database on the Umbrel app-data volume.
 
 

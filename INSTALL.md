@@ -207,8 +207,9 @@ sudo docker logs -f bal-will-ui
 # Container status
 sudo docker compose ps
 
-# Systemd service status
-sudo systemctl status bal-will.service
+# Boot auto-start hook (installed at a persistent path)
+ls -l /home/umbrel/umbrel/custom-hooks/pre-start
+cat /home/umbrel/umbrel/app-data/bal-umbrel/autostart.log
 
 # Restart containers
 sudo docker compose restart
@@ -217,22 +218,20 @@ sudo docker compose restart
 sudo docker compose up -d --build
 
 # Stop containers
-sudo systemctl stop bal-will.service
-
-# Disable auto-start
-sudo systemctl disable bal-will.service
+sudo docker compose down
 ```
+
+> Auto-start is NOT a systemd unit: umbrelOS runs `/` on an overlay that is
+> discarded on reboot, so units written to `/etc` disappear. See [AGENTS.md](AGENTS.md).
 
 ---
 
 ## Uninstallation
 
 ```bash
-# 1. Stop and disable auto-start
-sudo systemctl stop bal-will.service
-sudo systemctl disable bal-will.service
-sudo rm /etc/systemd/system/bal-will.service
-sudo systemctl daemon-reload
+# 1. Stop and remove auto-start
+sudo docker compose down
+sudo rm -f /home/umbrel/umbrel/custom-hooks/pre-start
 
 # 2. Remove containers and images
 cd ~/umbrel/home/bitcoin-after-life-will-executor

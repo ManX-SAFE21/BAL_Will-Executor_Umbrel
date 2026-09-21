@@ -45,28 +45,50 @@ sudo docker logs -f bal-umbrel-pusher
 developed/committed here first, then deployed. (On 16-17 Jul 2026 several hotfixes lived
 only on the device and were almost lost when the local working copy was deleted.)
 
-### Outage of 12 Sep 2026 — two independent failures, one trigger
+### Reboot outages (12 Sep + 21 Sep 2026) — what breaks and why
 
-An umbrelOS update rebooted the device on **10 Sep ~13:15**. That single event broke the
-app in *two* unrelated ways, which had to be fixed separately. If the app ever goes down
-after an OS update, check both.
+**Any reboot** — OS update or power cut — can take this app down, in two unrelated ways.
+The 10 Sep umbrelOS update triggered both at once; the 17 Sep power cut then triggered
+failure 1 again because the first fix for it was not actually persistent (see the warning
+below). If the app is down after a reboot, check both.
 
-**1. Boot resilience — `bal-umbrel.service`:** this app is deployed manually, NOT through
-Umbrel's official App Store install flow, so it is not in `umbreld`'s own app registry.
-On 12 Sep 2026, a device reboot left every officially-installed app running fine, but the
-`bal-umbrel-*` containers were fully removed (not just stopped) and never recreated —
-`umbreld` only reconciles apps it knows about; Docker's own `restart: unless-stopped`
-wasn't enough because the containers didn't merely stop, they were gone.
-Fix: `sudo bash scripts/install-service.sh` (run from the real app directory — it derives
-`APP_DIR` from its own path, so running a copy staged elsewhere, e.g. `/home/umbrel/`,
-silently writes the wrong `WorkingDirectory` and the unit fails) installs
-`/etc/systemd/system/bal-umbrel.service`, which runs
-`docker compose --env-file .env -f docker-compose.yml up -d` after `umbrel.service` +
-`docker.service` on every boot — independent of `umbreld`. Verify after any reinstall:
-`systemctl is-enabled bal-umbrel.service` → `enabled`. This should already be installed;
-if a future reboot causes another full outage, check this service first
-(`systemctl status bal-umbrel.service`, `journalctl -xeu bal-umbrel.service`) before
-assuming a code regression.
+**1. Boot resilience — the umbrelOS pre-start hook:** this app is deployed manually, NOT
+through Umbrel's official App Store install flow, so it is not in `umbreld`'s own app
+registry. On 12 Sep 2026, a device reboot left every officially-installed app running
+fine, but the `bal-umbrel-*` containers were fully removed (not just stopped) and never
+recreated — `umbreld` only reconciles apps it knows about; Docker's own
+`restart: unless-stopped` wasn't enough because the containers didn't merely stop, they
+were gone.
+
+> **A systemd unit does NOT work on umbrelOS — do not try it again.** That was the first
+> fix attempted here (12 Sep), and it was silently gone after the next reboot (a power cut
+> on 17 Sep), causing an identical outage. **umbrelOS runs `/` on an overlay whose upper
+> layer is discarded on reboot**, so anything written under `/etc` — including
+> `/etc/systemd/system/*.service` — evaporates. The SSH login banner says exactly this
+> ("modifications made to the umbrelOS system will not be persisted"). Confirm with
+> `findmnt -no SOURCE,FSTYPE /` → `overlay`. Only **`/home`** and **`/data`** are
+> persistent (bind mounts from `/dev/nvme0n1p4[/state/default/persist/...]`).
+
+Actual fix — umbrelOS's supported extension point. `/opt/umbrel-custom-hooks/run-pre-start`
+ships **inside the OS image** (so it returns after every OS update) and executes a user
+script at the **persistent** path `/home/umbrel/umbrel/custom-hooks/pre-start`.
+Install with `sudo bash scripts/install-service.sh`; the script installed is
+`scripts/umbrel-pre-start-hook.sh`.
+
+The hook **must not do the work inline.** The wrapper runs it `Before=umbrel.service`,
+blocking `umbreld` startup, but the network the stack needs (`umbrel_main_network`) is
+created *by* `umbreld` — waiting for it inline would deadlock until the 5-minute timeout.
+So the hook `setsid`-detaches a waiter that polls for that network and then runs
+`docker compose … up -d`, and returns 0 immediately.
+
+Verify (all three, after any reinstall or OS update):
+- `ls -l /home/umbrel/umbrel/custom-hooks/pre-start` → exists, executable
+- `ls -l /opt/umbrel-custom-hooks/run-pre-start` → the OS-side wrapper still exists
+- boot log: `/home/umbrel/umbrel/app-data/bal-umbrel/autostart.log`
+
+It can be exercised without rebooting — `sudo bash /home/umbrel/umbrel/custom-hooks/pre-start`
+is a no-op when the stack is already up, and still writes the log. If a future reboot
+causes another full outage, read that log first before assuming a code regression.
 
 **2. Public domain (Cloudflare Tunnel) — `bal-ui` must join `umbrel_main_network`:**
 symptom is asymmetric and is the giveaway — `http://umbrel.local:9140` returns 200 while

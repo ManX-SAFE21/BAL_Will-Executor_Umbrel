@@ -48,7 +48,7 @@ Three Docker containers, all sharing a persistent SQLite database:
 - **ZMQ auto-detection** — probes and optionally configures bitcoin.conf
 - **Cloudflare Tunnel ready** — Settings button hidden on public domain
 - **Electrum plugin compatible** — double-slash URL normalization in nginx
-- **Systemd auto-start** — survives Umbrel OS reboots
+- **Boot auto-start** — survives reboots and power cuts via umbrelOS's persistent pre-start hook
 - **Persistent data** — SQLite database on the Umbrel app-data volume
 
 ---
@@ -141,7 +141,8 @@ bitcoin-after-life-will-executor/
     ├── entrypoint-ui.sh        # Tor address + nginx launch
     ├── check-zmq.sh            # ZMQ probe + auto-config
     ├── configure-umbrel.sh     # Auto-detect Bitcoin config
-    └── install-service.sh      # Systemd auto-start installer
+    ├── install-service.sh      # Boot auto-start installer
+    └── umbrel-pre-start-hook.sh # The hook it installs (persistent path)
 ```
 
 ---
