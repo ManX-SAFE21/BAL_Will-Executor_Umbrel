@@ -52,13 +52,26 @@ The 10 Sep umbrelOS update triggered both at once; the 17 Sep power cut then tri
 failure 1 again because the first fix for it was not actually persistent (see the warning
 below). If the app is down after a reboot, check both.
 
-**1. Boot resilience — the umbrelOS pre-start hook:** this app is deployed manually, NOT
-through Umbrel's official App Store install flow, so it is not in `umbreld`'s own app
-registry. On 12 Sep 2026, a device reboot left every officially-installed app running
-fine, but the `bal-umbrel-*` containers were fully removed (not just stopped) and never
-recreated — `umbreld` only reconciles apps it knows about; Docker's own
-`restart: unless-stopped` wasn't enough because the containers didn't merely stop, they
-were gone.
+**1. Boot resilience — the umbrelOS pre-start hook.** This app is deployed manually, NOT
+through Umbrel's App Store flow, so it is not in `umbreld`'s app registry.
+
+> **Root cause (confirmed in the boot journal, 21 Sep 2026): `umbreld` wipes every
+> container at startup.** Early in its startup it logs
+> `[apps] Cleaning up old containers...`, removes **all** containers, then prunes **all**
+> networks — `umbrel_main_network` included — before recreating only the apps it knows
+> about. Ours is not one of them, so it is destroyed and never comes back. Docker's
+> `restart: unless-stopped` cannot help: the containers don't merely stop, they are gone.
+
+The consequence that cost two failed fixes: **starting the stack early is pointless — it
+is wiped seconds later.** On the 21 Sep boot the waiter had the stack up at 05:14:29,
+umbreld's cleanup ran at 05:14:31 and the networks were pruned at 05:15:04.
+**Waiting for `umbrel_main_network` is NOT a valid readiness signal** — the network that
+satisfies the check is the *previous* boot's, still present before the wipe.
+
+Valid signal: one of umbreld's **own** containers running (we use `auth`), which only
+exists on the far side of the cleanup — then a 30 s settle, then start. The waiter
+afterwards **supervises for 15 minutes**, restarting the stack if the containers vanish
+again, so a late prune cannot leave the executor down until a human notices.
 
 > **A systemd unit does NOT work on umbrelOS — do not try it again.** That was the first
 > fix attempted here (12 Sep), and it was silently gone after the next reboot (a power cut
