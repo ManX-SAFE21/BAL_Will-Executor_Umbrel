@@ -138,6 +138,45 @@ that `bal-ui` is really on `umbrel_main_network`:
 `sudo docker network inspect umbrel_main_network --format '{{range .Containers}}{{.Name}} {{end}}'`
 should list `bal-umbrel-ui` (and `bal-umbrel-pusher`, which needs it for the Bitcoin node).
 
+## Public exposure — nginx host guards (READ BEFORE ADDING AN ENDPOINT)
+
+`ui/nginx.conf` is the ONLY thing standing between the admin API and the internet.
+There is **no authentication** anywhere in `umbrel_api.rs`: every guard is a host check
+in nginx. Endpoints are reachable at both `/x` and `/api/x`, and the trailing
+`location /api/ { … }` is a **catch-all that proxies anything not matched earlier** — so
+a new endpoint is PUBLIC BY DEFAULT unless you add a guarded location for it.
+
+> **Incident, 21 Sep 2026.** Found while making `/txlist` public: `/api/backup` was
+> serving the **entire SQLite database** to anyone on `we.safe21.io` (verified — the
+> response began `SQLite format 3`), and `/merge`, `/restore/{file}`, `/backups/list`,
+> `/backup/config`, `/upload-logo`, `/remove-logo` were all reachable through the
+> catch-all. `/merge` and `/restore` are writes: arbitrary rows into, or a full
+> overwrite of, the production database. The irony is worth remembering — `/txlist` was
+> deliberately blocked "for privacy" while the whole database was downloadable next door.
+>
+> **A `405` from a GET probe is NOT protection.** It means nginx forwarded the request
+> and only the *method* was refused; the same path with `POST` goes through. Only a
+> `403` proves the guard fired.
+
+These endpoints are ours, not upstream's. Upstream `bal-server` exposes only `/`,
+`/.pub_key.pem`, `/version`, `/{network}/info`, `/{network}/stats`, `/{network}/pushtxs`
+and `/searchtx` — backup/merge/restore/branding all came with the Umbrel layer, so this
+class of hole is ours to prevent.
+
+Current policy:
+
+| Endpoint | Public (`we.safe21.io`) / `.onion` | Why |
+|---|---|---|
+| `txlist` | **allowed**, rate limited 5 r/s | Read-only: txid, network, fee, status, locktime, date. Parameterized query, whitelisted ORDER BY, hex-filtered search, `limit` clamped to 200. |
+| `txdetail` | 403 | `SELECT *` — raw signed transaction, beneficiary addresses and amounts. |
+| `backup`, `merge`, `restore/*`, `backups/list`, `backup/config`, `upload-logo`, `remove-logo` | 403 | Full-database read, or writes to it. |
+| `settings` | GET allowed, POST 403 | Read-only info is harmless; changes are not. |
+| `restart-server` | 403 | Restarts the server process. |
+
+When adding an endpoint, decide its exposure **in the same commit**, and verify against
+the live public domain with `curl -o /dev/null -w '%{http_code}'` — expecting `403`, not
+`405`. Test the local side too: the guards must not break `umbrel.local` admin use.
+
 ## Networking notes (important)
 
 - The pusher must join `umbrel_main_network` to reach the Bitcoin node (`APP_BITCOIN_NODE_IP`, typically `10.21.21.8`).

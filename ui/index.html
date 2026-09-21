@@ -632,6 +632,8 @@
     .tx-table th { padding: 8px 6px; text-align: left; color: var(--text-muted); text-transform: uppercase; font-size: 10px; letter-spacing: 0.08em; border-bottom: 2px solid var(--border); }
     .tx-table td { padding: 10px 6px; border-bottom: 1px solid var(--border); }
     .tx-table tr { cursor: pointer; transition: background 0.15s; }
+    /* Public domain: no detail view available, so don't invite a click. */
+    .tx-table tr.no-detail { cursor: default; }
     .tx-table tr:hover { background: var(--surface2); }
     .tx-table .mono { font-family: var(--mono); font-size: 11px; }
     .tx-table td.tx-txid { white-space: nowrap; }
@@ -1946,7 +1948,7 @@ async function loadTransactions() {
         label + ' <span class="arrow">' + arrow + '</span></th>';
     }).join('') + '</tr></thead>';
     const body = '<tbody>' + txs.map(tx =>
-      '<tr onclick="showTxDetail(\'' + tx.txid + '\')">' +
+      '<tr' + (IS_PUBLIC ? ' class="no-detail"' : ' onclick="showTxDetail(\'' + tx.txid + '\')"') + '>' +
         '<td class="mono tx-created">' + formatCreated(tx.date_creation) + '</td>' +
         '<td class="mono tx-txid" title="' + (tx.txid || '') + '">' + shortTxid(tx.txid) + '</td>' +
         '<td>' + (tx.network || '—') + '</td>' +
@@ -2061,14 +2063,21 @@ function hideTxDetail() {
   document.getElementById('detail-modal').classList.remove('visible');
 }
 
-/* ---- Public-domain check: hide Settings on we.safe21.io ---- */
+/* ---- Public-domain check ----
+   On the public domain the transaction LIST is visible (nginx allows /txlist),
+   but Backup and Settings stay hidden and /txdetail is refused with 403 — it
+   would expose the raw signed transaction plus beneficiary addresses and
+   amounts. So rows are rendered non-clickable there rather than opening a
+   detail modal that can only fail. */
+var IS_PUBLIC = false;
 (function checkPublicDomain() {
   const host = window.location.hostname;
-  if (host === 'we.safe21.io' || host.endsWith('.safe21.io') || host.endsWith('.onion')) {
-    document.getElementById('nav-transactions').style.display = 'none';
+  IS_PUBLIC = (host === 'we.safe21.io' || host.endsWith('.safe21.io') || host.endsWith('.onion'));
+  if (IS_PUBLIC) {
+    document.getElementById('nav-transactions').style.display = '';
     document.getElementById('nav-backup').style.display = 'none';
     document.getElementById('nav-settings').style.display = 'none';
-    if (window.location.hash === '#settings' || window.location.hash === '#transactions' || window.location.hash === '#backup') {
+    if (window.location.hash === '#settings' || window.location.hash === '#backup') {
       window.location.hash = '#dashboard';
     }
   } else {
