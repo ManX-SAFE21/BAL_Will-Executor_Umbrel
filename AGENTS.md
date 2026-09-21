@@ -75,11 +75,25 @@ script at the **persistent** path `/home/umbrel/umbrel/custom-hooks/pre-start`.
 Install with `sudo bash scripts/install-service.sh`; the script installed is
 `scripts/umbrel-pre-start-hook.sh`.
 
-The hook **must not do the work inline.** The wrapper runs it `Before=umbrel.service`,
-blocking `umbreld` startup, but the network the stack needs (`umbrel_main_network`) is
-created *by* `umbreld` — waiting for it inline would deadlock until the 5-minute timeout.
-So the hook `setsid`-detaches a waiter that polls for that network and then runs
-`docker compose … up -d`, and returns 0 immediately.
+The hook **must not do the work inline, and must not merely background it.** Two
+constraints collide:
+- the wrapper runs it `Before=umbrel.service`, blocking `umbreld` startup, but the network
+  the stack needs (`umbrel_main_network`) is created *by* `umbreld` — waiting for it
+  inline would deadlock until the 5-minute timeout;
+- the wrapper's unit is `Type=oneshot`, so when the hook returns systemd tears down the
+  unit's whole **control group**. A plain `… &` — even with `setsid`, which changes the
+  session but not the cgroup — is killed instantly.
+
+> That second point cost a third outage. The first hook version backgrounded its waiter
+> with `setsid nohup … &`. After the 21 Sep reboot the journal read
+> `running '/home/umbrel/umbrel/custom-hooks/pre-start'` → `completed successfully`, yet
+> `autostart.log` had **no line at all** from that boot: the waiter was killed on unit
+> teardown before it wrote anything. A hook that "ran successfully" while doing nothing
+> is the trap here — always confirm against `autostart.log`, never against the journal.
+
+So the hook hands the work to **`systemd-run`**, which starts the waiter as its own
+transient unit (`bal-umbrel-autostart`) in its own cgroup, unaffected by the teardown,
+and returns 0 at once.
 
 Verify (all three, after any reinstall or OS update):
 - `ls -l /home/umbrel/umbrel/custom-hooks/pre-start` → exists, executable
