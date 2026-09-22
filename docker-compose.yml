@@ -1,6 +1,26 @@
 services:
 
   # ---------------------------------------------------------------------------
+  # app_proxy: Umbrel's authenticating front door.
+  #
+  # Declaring it is all an App Store app has to do — umbreld injects the image
+  # (getumbrel/app-proxy), the published port, AUTH_SERVICE_PORT and the
+  # JWT_SECRET that validates Umbrel's session cookie. Without it the dashboard
+  # answers 200 to anyone on the LAN, while every other Umbrel app 302-redirects
+  # an unauthenticated request to the login page. The admin surface here can
+  # download the whole database and change the payout address, so it must sit
+  # behind that login.
+  #
+  # The Cloudflare tunnel is unaffected: it reaches bal-ui directly by container
+  # name over umbrel_main_network, so the public dashboard stays reachable and
+  # read-only (nginx refuses the admin endpoints on the public host).
+  # ---------------------------------------------------------------------------
+  app_proxy:
+    environment:
+      APP_HOST: bal-will-ui
+      APP_PORT: 80
+
+  # ---------------------------------------------------------------------------
   # server: HTTP API server (Rust/Hyper, port 9137 internal)
   # ---------------------------------------------------------------------------
   server:
@@ -107,8 +127,10 @@ services:
     environment:
       - TOR_HOSTNAME_PATH=/tor/hostname
 
-    ports:
-      - "${APP_PORT:-9140}:80"
+    # No `ports:` on purpose. app_proxy above is what umbreld publishes on
+    # APP_PORT, so every request from the LAN passes the Umbrel login first.
+    # Publishing port 80 here as well would reopen the unauthenticated path
+    # that app_proxy exists to close.
 
     volumes:
       - ${APP_DATA_DIR:-/home/umbrel/umbrel/app-data/bal-will}/data:/app-data:ro

@@ -140,6 +140,35 @@ should list `bal-umbrel-ui` (and `bal-umbrel-pusher`, which needs it for the Bit
 
 ## Public exposure — nginx host guards (READ BEFORE ADDING AN ENDPOINT)
 
+### Authentication — `app_proxy` (App Store installs only)
+
+Every stock Umbrel app routes its port through an `app_proxy` container that checks
+Umbrel's session cookie: an unauthenticated request to `umbrel.local:<port>` gets a 302
+to the login page (verified on the device against btc-rpc-explorer, electrs, bitcoin and
+cloudflared). Declaring it is all an app has to do — umbreld injects the image, the
+published port, `AUTH_SERVICE_PORT` and the `JWT_SECRET`:
+
+```yaml
+  app_proxy:
+    environment:
+      APP_HOST: bal-will-ui
+      APP_PORT: 80
+```
+
+`docker-compose.yml` (the App Store submission file) now declares it, and the `ui`
+service deliberately publishes **no** port — doing both would reopen the very path
+app_proxy closes. The Cloudflare tunnel is unaffected: it reaches `bal-ui` by container
+name over `umbrel_main_network`, so the public dashboard stays reachable and read-only.
+
+> **The manually-deployed instance on the device does NOT have this.** umbreld only
+> injects app_proxy for apps in its registry, so `docker-compose.umbrel.yml` still
+> publishes `9140` directly and answers **200 to anyone on the LAN** — full admin, no
+> login. Replicating app_proxy by hand would mean copying the install's `JWT_SECRET`
+> and manager IP and hoping the auth server accepts an app it does not know: fragile,
+> and a good way to lose dashboard access. Accepted as a known gap until the app is
+> installed through the App Store. Until then, treat LAN access as trusted, and note
+> that CSRF protection (below) is what stops a *remote* website from abusing it.
+
 `ui/nginx.conf` is the ONLY thing standing between the admin API and the internet.
 There is **no authentication** anywhere in `umbrel_api.rs`: every guard is a host check
 in nginx. Endpoints are reachable at both `/x` and `/api/x`, and the trailing

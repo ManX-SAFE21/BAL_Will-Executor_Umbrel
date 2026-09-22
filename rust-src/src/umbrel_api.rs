@@ -794,9 +794,20 @@ async fn custom_logo() -> impl Responder {
             let mime = detect_image_format(&data)
                 .map(mime_for_format)
                 .unwrap_or("application/octet-stream");
+            // SVG is a document, not just a picture: an uploaded one can carry
+            // <script>, and browsing straight to this URL would execute it on
+            // our own origin (stored XSS). `sandbox` with an empty default-src
+            // kills scripting, plugins and navigation while still rendering the
+            // image; `nosniff` stops a PNG/JPEG being re-interpreted as markup.
+            // Applied to every format — it costs nothing for raster images.
             HttpResponse::Ok()
                 .insert_header(("Content-Type", mime))
                 .insert_header(("Cache-Control", "public, max-age=86400"))
+                .insert_header(("X-Content-Type-Options", "nosniff"))
+                .insert_header((
+                    "Content-Security-Policy",
+                    "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                ))
                 .body(data)
         }
         Err(_) => HttpResponse::NotFound().body("Not found"),
