@@ -35,6 +35,19 @@ fn db_file() -> String {
     env::var("BAL_SERVER_DB_FILE").unwrap_or_else(|_| "bal.db".to_string())
 }
 
+/// Does `addr` parse as a mainnet Bitcoin address?
+///
+/// The dashboard's address is the one `entrypoint-server.sh` maps to
+/// `BAL_SERVER_BITCOIN_ADDRESS`, i.e. mainnet — and it is where every future
+/// fee is paid. A typo here silently sends income to an address nobody holds,
+/// and nothing downstream would complain, so refuse it at the door.
+fn is_valid_bitcoin_address(addr: &str) -> bool {
+    use std::str::FromStr;
+    bitcoin::Address::from_str(addr)
+        .map(|a| a.is_valid_for_network(bitcoin::Network::Bitcoin))
+        .unwrap_or(false)
+}
+
 fn net_from_str(s: &str) -> bitcoin::Network {
     match s {
         "regtest" => bitcoin::Network::Regtest,
@@ -559,6 +572,31 @@ FROM tbl_tx GROUP BY network";
 
 /// Merge all rows from a server-local SQLite file at `src` into the live db
 /// (INSERT OR IGNORE, then recompute stats). Shared by /merge and /restore.
+/// Does the SQLite file at `path` actually carry the three tables a merge
+/// needs? This has to EXECUTE the query: `prepare()` alone succeeds on any
+/// readable SQLite file regardless of its schema, which is how the original
+/// check passed everything.
+fn db_has_our_tables(path: &str) -> bool {
+    let db = match open_db(path) {
+        Ok(d) => d,
+        Err(_) => return false,
+    };
+    let mut stmt = match db.prepare(
+        "SELECT COUNT(*) AS n FROM sqlite_master \
+         WHERE type='table' AND name IN ('tbl_tx','tbl_inp','tbl_out')",
+    ) {
+        Ok(s) => s,
+        Err(_) => return false,
+    };
+    matches!(stmt.next(), Ok(State::Row)) && stmt.read::<i64, _>("n").unwrap_or(0) == 3
+}
+
+/// Merge all rows from a server-local SQLite file at `src` into the live db
+/// (INSERT OR IGNORE, then recompute stats). Shared by /merge and /restore.
+///
+/// Every step is checked: the original ignored all of them with `let _ =` and
+/// still answered `{"status":"ok"}`, so a merge that silently did nothing —
+/// or that deleted tbl_stats and failed to rebuild it — looked successful.
 fn merge_from_db(src: &str) -> HttpResponse {
     let db = match open_db(&db_file()) {
         Ok(d) => d,
@@ -567,22 +605,73 @@ fn merge_from_db(src: &str) -> HttpResponse {
                 .body(format!("{{\"error\":\"db open: {}\"}}", e));
         }
     };
-    let _ = db.execute("BEGIN IMMEDIATE");
-    let attach = format!("ATTACH DATABASE '{}' AS bak", src.replace('\'', "''"));
-    if let Err(e) = db.execute(&attach) {
+
+    let fail = |db: &sqlite::Connection, step: &str, e: String| -> HttpResponse {
         let _ = db.execute("ROLLBACK");
-        return HttpResponse::InternalServerError().body(format!("{{\"error\":\"attach: {}\"}}", e));
+        let _ = db.execute("DETACH DATABASE bak");
+        log::error!("umbrel merge: {} failed: {}", step, e);
+        HttpResponse::InternalServerError()
+            .body(format!("{{\"error\":\"{} failed: {}\"}}", step, e))
+    };
+
+    if let Err(e) = db.execute("BEGIN IMMEDIATE") {
+        return HttpResponse::InternalServerError()
+            .body(format!("{{\"error\":\"begin: {}\"}}", e));
     }
-    let _ = db.execute("INSERT OR IGNORE INTO tbl_tx SELECT * FROM bak.tbl_tx");
-    let _ = db.execute("INSERT OR IGNORE INTO tbl_inp SELECT * FROM bak.tbl_inp");
-    let _ = db.execute("INSERT OR IGNORE INTO tbl_out SELECT * FROM bak.tbl_out");
-    let _ = db.execute("INSERT OR IGNORE INTO tbl_xpub(network,xpub) SELECT network,xpub FROM bak.tbl_xpub");
-    let _ = db.execute("INSERT OR IGNORE INTO tbl_address SELECT * FROM bak.tbl_address");
-    let _ = db.execute("DELETE FROM tbl_stats");
-    let _ = db.execute(RECOMPUTE_STATS_SQL);
+
+    // Bind the path instead of interpolating it into the SQL text.
+    match db.prepare("ATTACH DATABASE ? AS bak") {
+        Ok(mut stmt) => {
+            if let Err(e) = stmt.bind((1, Value::String(src.to_string()))) {
+                return fail(&db, "attach-bind", e.to_string());
+            }
+            if let Err(e) = stmt.next() {
+                return fail(&db, "attach", e.to_string());
+            }
+        }
+        Err(e) => return fail(&db, "attach-prepare", e.to_string()),
+    }
+
+    // Required: validated to exist before we got here.
+    for (step, sql) in [
+        ("tbl_tx", "INSERT OR IGNORE INTO tbl_tx SELECT * FROM bak.tbl_tx"),
+        ("tbl_inp", "INSERT OR IGNORE INTO tbl_inp SELECT * FROM bak.tbl_inp"),
+        ("tbl_out", "INSERT OR IGNORE INTO tbl_out SELECT * FROM bak.tbl_out"),
+    ] {
+        if let Err(e) = db.execute(sql) {
+            return fail(&db, step, e.to_string());
+        }
+    }
+
+    // Optional: older backups legitimately lack these, so a failure here is
+    // reported but must not abort an otherwise good merge.
+    let mut skipped: Vec<&str> = Vec::new();
+    for (name, sql) in [
+        ("tbl_xpub", "INSERT OR IGNORE INTO tbl_xpub(network,xpub) SELECT network,xpub FROM bak.tbl_xpub"),
+        ("tbl_address", "INSERT OR IGNORE INTO tbl_address SELECT * FROM bak.tbl_address"),
+    ] {
+        if db.execute(sql).is_err() {
+            skipped.push(name);
+        }
+    }
+
+    // Stats are derived: deleting them is only safe if the rebuild succeeds.
+    if let Err(e) = db.execute("DELETE FROM tbl_stats") {
+        return fail(&db, "clear-stats", e.to_string());
+    }
+    if let Err(e) = db.execute(RECOMPUTE_STATS_SQL) {
+        return fail(&db, "recompute-stats", e.to_string());
+    }
+
     let _ = db.execute("DETACH DATABASE bak");
-    let _ = db.execute("COMMIT");
-    HttpResponse::Ok().body("{\"status\":\"ok\"}")
+    if let Err(e) = db.execute("COMMIT") {
+        return fail(&db, "commit", e.to_string());
+    }
+
+    HttpResponse::Ok().json(serde_json::json!({
+        "status": "ok",
+        "skipped_tables": skipped,
+    }))
 }
 
 // ---- handlers ----
@@ -646,6 +735,23 @@ async fn set_backup_config(body: web::Bytes) -> impl Responder {
         Ok(c) => c,
         Err(e) => return HttpResponse::BadRequest().body(format!("Invalid JSON: {}", e)),
     };
+    // This value becomes `backup_dir()`, which /restore joins a filename onto
+    // and the pusher writes weekly backups into. `restore` sanitizes only the
+    // filename, so an unvalidated directory here would move the whole target
+    // elsewhere. Empty means "use the default next to the database".
+    if !cfg.backup_path.is_empty() {
+        let p = Path::new(&cfg.backup_path);
+        if !p.is_absolute() {
+            return HttpResponse::BadRequest()
+                .body("{\"error\":\"backup path must be absolute\"}");
+        }
+        if p.components()
+            .any(|c| matches!(c, std::path::Component::ParentDir))
+        {
+            return HttpResponse::BadRequest()
+                .body("{\"error\":\"backup path must not contain '..'\"}");
+        }
+    }
     let json = serde_json::to_string_pretty(&cfg).unwrap_or_default();
     match fs::write(backup_config_path(), json) {
         Ok(_) => HttpResponse::Ok().body("ok"),
@@ -654,26 +760,23 @@ async fn set_backup_config(body: web::Bytes) -> impl Responder {
 }
 
 async fn merge(body: web::Bytes) -> impl Responder {
-    let tmp = format!("/tmp/bal-merge-{}.db", std::process::id());
+    // Staged inside the app's own data directory, not /tmp: a predictable name
+    // in a world-writable directory invites a symlink being planted at that
+    // path, and `fs::write` would follow it.
+    let tmp = data_dir()
+        .join(format!("merge-upload-{}.db.tmp", std::process::id()))
+        .to_string_lossy()
+        .into_owned();
+
     if let Err(e) = fs::write(&tmp, &body) {
         return HttpResponse::InternalServerError()
             .body(format!("{{\"error\":\"cannot write temp file: {}\"}}", e));
     }
-    // Validate it is a SQLite db with the expected tables before merging.
-    let valid = open_db(&tmp)
-        .ok()
-        .and_then(|d| {
-            d.prepare(
-                "SELECT name FROM sqlite_master WHERE type='table' AND name IN ('tbl_tx','tbl_inp','tbl_out')",
-            )
-            .ok()
-            .map(|_| ())
-        })
-        .is_some();
-    if !valid {
+    if !db_has_our_tables(&tmp) {
         let _ = fs::remove_file(&tmp);
-        return HttpResponse::BadRequest()
-            .body("{\"error\":\"uploaded file is not a valid SQLite database\"}");
+        return HttpResponse::BadRequest().body(
+            "{\"error\":\"not a Will Executor database (tbl_tx/tbl_inp/tbl_out missing)\"}",
+        );
     }
     let resp = merge_from_db(&tmp);
     let _ = fs::remove_file(&tmp);
@@ -716,7 +819,11 @@ async fn set_settings(body: web::Bytes) -> impl Responder {
     }
     // Merge into the persisted settings, preserving logo_format (set by upload).
     let mut s = load_settings();
-    if !incoming.address.is_empty() && incoming.address.len() > 5 {
+    if !incoming.address.is_empty() {
+        if !is_valid_bitcoin_address(&incoming.address) {
+            return HttpResponse::BadRequest()
+                .body("Not a valid Bitcoin (mainnet) address — refusing to save it.");
+        }
         s.address = incoming.address;
     }
     s.fee = incoming.fee;
