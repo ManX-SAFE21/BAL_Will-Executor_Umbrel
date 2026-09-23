@@ -140,6 +140,46 @@ should list `bal-umbrel-ui` (and `bal-umbrel-pusher`, which needs it for the Bit
 
 ## Public exposure — nginx host guards (READ BEFORE ADDING AN ENDPOINT)
 
+### Output encoding in the dashboard (`esc` / `hexOnly`)
+
+`ui/index.html` renders everything through `innerHTML` and had **no escaping at all**.
+Reviewed again on 23 Sep 2026; the conclusion was that the exposure is narrow but real,
+and the fix cheap:
+
+- **Not a way in:** `pushtxs` is public, but upstream validates `network` against a
+  whitelist and derives txid/addresses/fees itself, and `push_err` is written with a
+  bound parameter carrying bitcoind's fixed reject reasons. Nothing there is free text.
+- **The way in is `/merge` and `/restore`,** which exist precisely to import databases
+  from *other* instances (see the README's "merge backups from other instances"). With a
+  single owner restoring their own backup this is theoretical; **with several admins
+  sharing one executor it is not** — one of them imports a file and a crafted field runs
+  script in the next admin's session. Since the LAN has no authentication, that script
+  has full admin rights: change the payout address, download the database.
+
+Two helpers, because the contexts differ and this is the part that is easy to get wrong:
+
+| Helper | Use | Why not the other |
+|---|---|---|
+| `esc(v)` | HTML text and quoted attributes | — |
+| `hexOnly(v)` | values placed inside an inline handler (`onclick="showTxDetail('…')"`) | The browser decodes HTML entities **before** the JS parser runs, so an `esc`-escaped quote becomes a real quote again and still breaks out. A txid is hex by definition, so stripping non-hex is both safe and lossless. |
+
+19 call sites were wrapped. Watch for these when editing the renderer:
+`formatLocktime()` returns its **raw input** when the value is not numeric (that path is
+now escaped), and wrapping a field in `esc(...)` leaves the original text as a substring —
+so a follow-up search-and-replace can double-wrap or silently miss the second occurrence.
+
+Verified by running the two helpers against `<img src=x onerror=…>`, `'); fetch(…); //`
+and `" onmouseover="…`.
+
+### Upload staging (`/merge`)
+
+The upload is written to disk **before** validation, so two things matter:
+`client_max_body_size` on that location is **25M** (the database is ~200 KB; it was 500M,
+which let an unauthenticated LAN client write half a gigabyte into the data partition),
+and the temp file name carries a per-request suffix, not just the PID. Actix serves
+requests concurrently: with a PID-only name two overlapping merges share one path, and
+the file that gets merged need not be the one that passed validation.
+
 ### Authentication — `app_proxy` (App Store installs only)
 
 Every stock Umbrel app routes its port through an `app_proxy` container that checks

@@ -763,8 +763,17 @@ async fn merge(body: web::Bytes) -> impl Responder {
     // Staged inside the app's own data directory, not /tmp: a predictable name
     // in a world-writable directory invites a symlink being planted at that
     // path, and `fs::write` would follow it.
+    // Unique per request, not just per process: actix serves requests
+    // concurrently, so a name derived only from the PID is the SAME path for
+    // two overlapping merges — the second upload would overwrite the first
+    // between its validation and its merge, and the database actually merged
+    // would not be the one that passed the check.
+    let uniq = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
     let tmp = data_dir()
-        .join(format!("merge-upload-{}.db.tmp", std::process::id()))
+        .join(format!("merge-upload-{}-{}.db.tmp", std::process::id(), uniq))
         .to_string_lossy()
         .into_owned();
 

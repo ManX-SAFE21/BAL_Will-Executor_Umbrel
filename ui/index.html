@@ -1275,6 +1275,31 @@ function stateBadge(tx) {
 }
 
 /* ---- Utility: short txid with ellipsis ---- */
+/* ---- Output encoding ----
+   Everything the dashboard renders goes through innerHTML, and rows can come
+   from a database imported via /merge or /restore — a feature that exists
+   to pull in backups from OTHER instances, so that text is not ours to trust.
+   Where several admins share one executor, a crafted field would otherwise
+   run script in the next admin session with the app full privileges.
+
+   esc() is for HTML text and quoted attributes. It is NOT enough inside an
+   inline handler: the browser decodes the attribute before the JS parser sees
+   it, so an escaped quote would still break out. Values used there go through
+   hexOnly() instead, which is safe because a txid is hex by definition. */
+function esc(v) {
+  if (v === null || v === undefined) return '';
+  return String(v)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+function hexOnly(v) {
+  return String(v === null || v === undefined ? '' : v).replace(/[^0-9a-fA-F]/g, '').slice(0, 64);
+}
+
 function shortTxid(txid) {
   if (!txid || txid.length <= 16) return txid || '—';
   const n = Math.floor(txid.length / 4);
@@ -1291,7 +1316,7 @@ function formatCreated(s) {
 function formatLocktime(lt) {
   if (lt === null || lt === undefined || lt === '') return '\u2014';
   const n = parseInt(lt, 10);
-  if (isNaN(n)) return lt;
+  if (isNaN(n)) return esc(lt);
   if (n > 500000000) {
     const d = new Date(n * 1000);
     const y = d.getUTCFullYear();
@@ -1948,10 +1973,10 @@ async function loadTransactions() {
         label + ' <span class="arrow">' + arrow + '</span></th>';
     }).join('') + '</tr></thead>';
     const body = '<tbody>' + txs.map(tx =>
-      '<tr' + (IS_PUBLIC ? ' class="no-detail"' : ' onclick="showTxDetail(\'' + tx.txid + '\')"') + '>' +
-        '<td class="mono tx-created">' + formatCreated(tx.date_creation) + '</td>' +
-        '<td class="mono tx-txid" title="' + (tx.txid || '') + '">' + shortTxid(tx.txid) + '</td>' +
-        '<td>' + (tx.network || '—') + '</td>' +
+      '<tr' + (IS_PUBLIC ? ' class="no-detail"' : ' onclick="showTxDetail(\'' + hexOnly(tx.txid) + '\')"') + '>' +
+        '<td class="mono tx-created">' + esc(formatCreated(tx.date_creation)) + '</td>' +
+        '<td class="mono tx-txid" title="' + esc(tx.txid || '') + '">' + esc(shortTxid(tx.txid)) + '</td>' +
+        '<td>' + esc(tx.network || '—') + '</td>' +
         '<td class="right">' + formatSats(tx.our_fees || 0) + '</td>' +
         '<td>' + stateBadge(tx) + '</td>' +
         '<td class="right mono tx-locktime">' + formatLocktime(tx.locktime) + '</td>' +
@@ -2011,17 +2036,17 @@ async function showTxDetail(txid) {
     }
     let html =
       '<div class="detail-section">' +
-      '<div class="detail-row"><span class="detail-key">TXID</span><span class="detail-val mono" style="font-size:11px;word-break:break-all;">' + (tx.txid || '—') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-key">Network</span><span class="detail-val">' + (tx.network || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">TXID</span><span class="detail-val mono" style="font-size:11px;word-break:break-all;">' + esc(tx.txid || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Network</span><span class="detail-val">' + esc(tx.network || '—') + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Server Fee</span><span class="detail-val">' + formatSats(tx.our_fees || 0) + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Total Output</span><span class="detail-val">' + formatSats(tx.total_output || 0) + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Network Fee</span><span class="detail-val">' + (tx.network_fees ? formatSats(tx.network_fees) : '—') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-key">Address</span><span class="detail-val">' + (tx.our_address || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Address</span><span class="detail-val">' + esc(tx.our_address || '—') + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">State</span><span class="detail-val">' + stateBadge(tx) + '</span></div>' +
       '<div class="detail-row"><span class="detail-key">Confirmations</span><span class="detail-val">' + (parseInt(tx.confirmations,10) === -1 ? 'n/a (evicted from mempool)' : (parseInt(tx.confirmations,10) || 0)) + '</span></div>' +
-      '<div class="detail-row"><span class="detail-key">Locktime</span><span class="detail-val">' + formatLocktime(tx.locktime) + ' <span class="muted">' + (parseInt(tx.locktime,10) < 500000000 ? 'Block Number ' + Number(tx.locktime).toLocaleString() : '(' + tx.locktime + ')') + '</span></span></div>' +
-      '<div class="detail-row"><span class="detail-key">Created</span><span class="detail-val">' + (tx.date_creation || '—') + '</span></div>' +
-      '<div class="detail-row"><span class="detail-key">Updated</span><span class="detail-val">' + (tx.date_update || '—') + '</span></div>';
+      '<div class="detail-row"><span class="detail-key">Locktime</span><span class="detail-val">' + formatLocktime(tx.locktime) + ' <span class="muted">' + (parseInt(tx.locktime,10) < 500000000 ? 'Block Number ' + Number(tx.locktime).toLocaleString() : '(' + esc(tx.locktime) + ')') + '</span></span></div>' +
+      '<div class="detail-row"><span class="detail-key">Created</span><span class="detail-val">' + esc(tx.date_creation || '—') + '</span></div>' +
+      '<div class="detail-row"><span class="detail-key">Updated</span><span class="detail-val">' + esc(tx.date_update || '—') + '</span></div>';
     if (tx.status === 2) {
       html += '<div class="detail-row"><span class="detail-key">&nbsp;</span>' +
         '<span class="detail-val" style="color:var(--neutral);font-size:11px;">' +
@@ -2030,14 +2055,14 @@ async function showTxDetail(txid) {
         '</span></div>';
     }
     if (tx.push_err) {
-      html += '<div class="detail-row"><span class="detail-key">Error</span><span class="detail-val" style="color:var(--error);">' + tx.push_err + '</span></div>';
+      html += '<div class="detail-row"><span class="detail-key">Error</span><span class="detail-val" style="color:var(--error);">' + esc(tx.push_err) + '</span></div>';
     }
     if (tx.inputs && tx.inputs.length > 0) {
       html += '<div class="detail-section-title" style="margin-top:10px;">Inputs (' + tx.inputs.length + ')</div>' +
         '<table class="tx-table"><thead><tr><th>TXID</th><th class="right">Vout</th></tr></thead><tbody>';
       for (const inp of tx.inputs) {
         const short = inp.in_txid && inp.in_txid.length > 20 ? inp.in_txid.slice(0, 20) + '\u2026' : (inp.in_txid || '—');
-        html += '<tr><td class="mono" title="' + (inp.in_txid || '') + '">' + short + '</td><td class="right mono">' + (inp.in_vout || '—') + '</td></tr>';
+        html += '<tr><td class="mono" title="' + esc(inp.in_txid || '') + '">' + esc(short) + '</td><td class="right mono">' + esc(inp.in_vout || '—') + '</td></tr>';
       }
       html += '</tbody></table>';
     }
@@ -2045,9 +2070,9 @@ async function showTxDetail(txid) {
       html += '<div class="detail-section-title" style="margin-top:10px;">Outputs (' + tx.outputs.length + ')</div>' +
         '<table class="tx-table"><thead><tr><th class="right">Vout</th><th>Address</th><th class="right">Amount</th></tr></thead><tbody>';
       for (const out of tx.outputs) {
-        const addr = out.address || '—';
+        const addr = esc(out.address || '—');
         const scriptShort = out.script_pubkey ? out.script_pubkey.slice(0, 40) + '\u2026' : '—';
-        html += '<tr><td class="right mono">' + (out.vout || '—') + '</td><td class="mono" style="font-size:10px;" title="' + (out.script_pubkey || '') + '">' + addr + '</td><td class="right mono">' + (out.amount || '0') + ' sat</td></tr>';
+        html += '<tr><td class="right mono">' + esc(out.vout || '—') + '</td><td class="mono" style="font-size:10px;" title="' + esc(out.script_pubkey || '') + '">' + addr + '</td><td class="right mono">' + esc(out.amount || '0') + ' sat</td></tr>';
       }
       html += '</tbody></table>';
     }
