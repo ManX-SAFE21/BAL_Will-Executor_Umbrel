@@ -53,6 +53,10 @@ services:
       - BAL_SERVER_TESTNET_ADDRESS=${BAL_TESTNET_ADDRESS:-}
       - BAL_SERVER_TESTNET_FIXED_FEE=${BAL_TESTNET_FEE:-50000}
 
+      # --- Testnet4 (optional) ---
+      - BAL_SERVER_TESTNET4_ADDRESS=${BAL_TESTNET4_ADDRESS:-}
+      - BAL_SERVER_TESTNET4_FIXED_FEE=${BAL_TESTNET4_FEE:-50000}
+
       # --- Regtest (optional) ---
       - BAL_SERVER_REGTEST_ADDRESS=${BAL_REGTEST_ADDRESS:-}
       - BAL_SERVER_REGTEST_FIXED_FEE=${BAL_REGTEST_FEE:-0}
@@ -128,6 +132,79 @@ services:
       - bal-v6
 
   # ---------------------------------------------------------------------------
+  # bitcoind-testnet4: dedicated node for the testnet4 executor
+  # The Umbrel Bitcoin app runs chain=main and must stay that way, so testnet4
+  # gets its own node. Reachable only on the private bal-testnet4 network: no
+  # port is published. Limits keep it from competing with the mainnet node.
+  # ---------------------------------------------------------------------------
+  bitcoind-testnet4:
+    image: bitcoin/bitcoin:29.5@sha256:97b2ae3833880760b36481cba435de7b6f32218bc8eb6aaa5ac321d9591b9ae4
+    container_name: bal-umbrel-bitcoind-testnet4
+    restart: unless-stopped
+    command:
+      - bitcoind
+      - -testnet4=1
+      - -server=1
+      - -listen=0
+      # bal-pusher looks transactions up by txid to track confirmations.
+      - -txindex=1
+      - -dbcache=300
+      - -maxmempool=100
+      - -nodebuglogfile=1
+      - -rpcbind=0.0.0.0:48332
+      - -rpcallowip=10.77.4.0/24
+      - -zmqpubhashblock=tcp://0.0.0.0:24332
+    volumes:
+      - ${APP_DATA_DIR:-.}/bitcoin-testnet4:/home/bitcoin/.bitcoin
+    networks:
+      - bal-testnet4
+    mem_limit: 2g
+    cpus: 1.5
+    stop_grace_period: 2m
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ---------------------------------------------------------------------------
+  # bal-pusher-testnet4: block watcher for testnet4 (one pusher per network)
+  # Behind a profile, enabled by COMPOSE_PROFILES=testnet4 in .env only once the
+  # node has synced: the pusher does its full pass, database writes and welist
+  # report included, on every block notification, which during initial sync
+  # would mean a flood of reports and constant contention on the database it
+  # shares with the mainnet pusher.
+  # Runs the binary directly: entrypoint-pusher.sh is mainnet-specific, and its
+  # check-zmq.sh would overwrite the shared /data/zmq-status.json.
+  # ---------------------------------------------------------------------------
+  bal-pusher-testnet4:
+    profiles: ["testnet4"]
+    image: bal-umbrel-rust:latest
+    container_name: bal-umbrel-pusher-testnet4
+    restart: unless-stopped
+    depends_on:
+      - bal-server
+      - bitcoind-testnet4
+    command: ["/usr/local/bin/bal-pusher", "testnet4"]
+    environment:
+      - BAL_PUSHER_DB_FILE=/data/bal.db
+      - BAL_PUSHER_TESTNET4_HOST=http://bitcoind-testnet4
+      - BAL_PUSHER_TESTNET4_PORT=48332
+      - BAL_PUSHER_TESTNET4_COOKIE_FILE=/bitcoin-testnet4/testnet4/.cookie
+      - BAL_PUSHER_TESTNET4_ZMQ_HASHBLOCK=tcp://bitcoind-testnet4:24332
+      - SSL_KEY_PATH=/data/keys/private_key.pem
+      - BAL_PUSHER_SEND_STATS=${BAL_SEND_STATS:-false}
+      - BAL_SERVER_URL=${BAL_PUBLIC_URL:-}
+      - RUST_LOG=${BAL_LOG_LEVEL:-info}
+    volumes:
+      - ${APP_DATA_DIR:-.}/data:/data
+      - ${APP_DATA_DIR:-.}/bitcoin-testnet4:/bitcoin-testnet4:ro
+    networks:
+      - bal-testnet4
+      # Same route to the welist aggregator as the mainnet pusher.
+      - bal-v6
+
+  # ---------------------------------------------------------------------------
   # bal-ui: Nginx web dashboard
   # Serves the static HTML/JS dashboard and reverse-proxies /api/* to bal-server
   # ---------------------------------------------------------------------------
@@ -185,6 +262,14 @@ networks:
     ipam:
       config:
         - subnet: fd00:ba1:e21::/64
+
+  # Private to the testnet4 node and its pusher. Fixed subnet because bitcoind's
+  # -rpcallowip has to name it.
+  bal-testnet4:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 10.77.4.0/24
 
   umbrel_main_network:
     external: true

@@ -2,7 +2,8 @@
 # =============================================================================
 # umbrel-pre-start-hook.sh — installed as /home/umbrel/umbrel/custom-hooks/pre-start
 #
-# Brings the Will Executor stack up on every boot, and keeps it up.
+# Brings the manually deployed stacks up on every boot, and keeps them up.
+# Today: the Will Executor (bal-umbrel) and the exchange board (p2p-btc).
 #
 # THE ROOT PROBLEM: umbreld WIPES CONTAINERS AT STARTUP
 # -----------------------------------------------------
@@ -39,14 +40,30 @@
 # cgroup, untouched by that teardown.
 # =============================================================================
 
-APP_DIR=/home/umbrel/umbrel/app-data/bal-umbrel/bal-umbrel
+# Every manually deployed stack on this machine, one per line:
+#     <compose directory>|<every container the stack must have running>
+#
+# List ALL of them, not one representative. Until 21 Oct 2026 each stack named
+# a single sentinel, and for the will executor that was bal-umbrel-ui — the
+# least critical part. On that boot umbreld's cleanup removed bal-umbrel-pusher
+# (the component that actually broadcasts the wills) while the UI survived, so
+# supervision saw "bal-umbrel-ui=up", closed the window as healthy, and the
+# executor watched no blocks for 10 h 53 min. Pusher first: it is the one that
+# matters.
+# They all share one waiter: the expensive part is waiting for umbreld, and
+# waiting for it twice would only mean two units racing to start containers on
+# the same networks.
+STACKS="
+/home/umbrel/umbrel/app-data/bal-umbrel/bal-umbrel|bal-umbrel-pusher bal-umbrel-server bal-umbrel-ui bal-umbrel-bitcoind-testnet4 bal-umbrel-pusher-testnet4
+/home/umbrel/umbrel/app-data/p2p-btc/deploy/umbrel|p2p-btc-app
+"
+
 LOG=/home/umbrel/umbrel/app-data/bal-umbrel/autostart.log
-UNIT=bal-umbrel-autostart
+UNIT=umbrel-manual-stacks-autostart
 
 # Container that proves umbreld has finished its cleanup and is starting apps:
 # it is one of umbreld's own, so it only exists on the far side of the wipe.
 UMBRELD_READY_CONTAINER=auth
-OUR_CONTAINER=bal-umbrel-ui
 
 # ---------------------------------------------------------------------------
 # Waiter branch — runs inside the transient unit, detached from the hook.
@@ -59,9 +76,27 @@ if [ "${1:-}" = "--waiter" ]; then
         [ "$(docker inspect -f '{{.State.Running}}' "$1" 2>/dev/null)" = "true" ]
     }
 
+    # One stack. The .env is optional: the will executor has one, the
+    # exchange board does not, and passing --env-file for a file that is not
+    # there makes compose fail outright.
+    start_one() {
+        dir="$1"
+        cd "${dir}" || { echo "$(date -Is) ERROR: ${dir} missing"; return 1; }
+        if [ -f .env ]; then
+            docker compose --env-file .env -f docker-compose.yml up -d
+        else
+            docker compose -f docker-compose.yml up -d
+        fi
+    }
+
+    # All of them. One that fails must not stop the others: they are
+    # unrelated applications that happen to share a boot.
     start_stack() {
-        cd "${APP_DIR}" || { echo "$(date -Is) ERROR: ${APP_DIR} missing"; return 1; }
-        docker compose --env-file .env -f docker-compose.yml up -d
+        echo "${STACKS}" | while IFS='|' read -r dir containers; do
+            [ -n "${dir}" ] || continue
+            echo "$(date -Is) starting ${dir} (${containers})"
+            start_one "${dir}" || echo "$(date -Is) ERROR: ${dir} failed to start"
+        done
     }
 
     # --- 1. Wait for umbreld to be past its wipe and running its own apps ----
@@ -92,14 +127,26 @@ if [ "${1:-}" = "--waiter" ]; then
     # back instead of leaving the executor down until a human notices.
     for i in $(seq 1 30); do   # 30 x 30s = 15 min
         sleep 30
-        if ! running "${OUR_CONTAINER}"; then
-            echo "$(date -Is) ${OUR_CONTAINER} gone (check ${i}) — restarting stack"
-            start_stack
-            echo "$(date -Is) restart done (exit $?)"
-        fi
+        echo "${STACKS}" | while IFS='|' read -r dir containers; do
+            [ -n "${dir}" ] || continue
+            missing=""
+            for c in ${containers}; do
+                running "${c}" || missing="${missing} ${c}"
+            done
+            # One compose up per stack recreates every missing service at once.
+            if [ -n "${missing}" ]; then
+                echo "$(date -Is)${missing} gone (check ${i}) — restarting ${dir}"
+                start_one "${dir}" || true
+            fi
+        done
     done
 
-    echo "$(date -Is) supervision window closed; stack state: $(running "${OUR_CONTAINER}" && echo up || echo DOWN)"
+    stato=""
+    for c in $(echo "${STACKS}" | cut -d'|' -f2); do
+        [ -n "${c}" ] || continue
+        stato="${stato}${c}=$(running "${c}" && echo up || echo DOWN) "
+    done
+    echo "$(date -Is) supervision window closed; ${stato}"
     exit 0
 fi
 
@@ -116,7 +163,7 @@ fi
 systemctl reset-failed "${UNIT}" 2>/dev/null
 
 if ! systemd-run --unit="${UNIT}" --collect --no-block --quiet \
-        --description="Bitcoin After Life Will Executor boot autostart" \
+        --description="Manually deployed stacks: boot autostart" \
         /bin/bash "$0" --waiter 2>>"${LOG}"; then
     echo "$(date -Is) ERROR: systemd-run failed to start ${UNIT}" >>"${LOG}" 2>&1
 fi

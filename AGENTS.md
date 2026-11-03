@@ -246,6 +246,30 @@ When adding an endpoint, decide its exposure **in the same commit**, and verify 
 the live public domain with `curl -o /dev/null -w '%{http_code}'` — expecting `403`, not
 `405`. Test the local side too: the guards must not break `umbrel.local` admin use.
 
+## Testnet4 (production, since 1 Nov 2026)
+
+The Umbrel Bitcoin app stays on `chain=main`, so testnet4 has its own stack services:
+`bal-umbrel-bitcoind-testnet4` (no published ports, data in `bitcoin-testnet4/` next to
+`data/`) and `bal-umbrel-pusher-testnet4`. One `bal-server` serves both networks.
+
+- **The pusher sits behind the `testnet4` compose profile**, enabled by
+  `COMPOSE_PROFILES=testnet4` in `.env`. On a new deployment leave it off until the node
+  reports `initialblockdownload: false`: the pusher does a full pass, database writes and
+  welist report included, on every block notification.
+- **It runs the binary directly, not `entrypoint-pusher.sh`:** that script is
+  mainnet-specific and its `check-zmq.sh` overwrites the shared `/data/zmq-status.json`.
+- **Keep `txindex=1`, do not prune.** Without it the confirmation tracking cannot find a
+  confirmed transaction and marks it `status=2` ("done elsewhere").
+- **Anything a pusher writes to `/data` must be per network.** A shared
+  `block-status.json` made the dashboard show the testnet4 height as the mainnet one.
+  Mainnet keeps `block-status.json`; others write `block-status-<net>.json`, served by
+  `/api/blockheight?network=<net>` (whitelisted).
+- **An empty `_ADDRESS` variable enables a network**, so `entrypoint-server.sh` unsets the
+  empty ones. Otherwise the server advertises networks it has no address or pusher for.
+- Dashboard: `/?net=testnet4` opens on that network. `CHAIN_API` in `ui/index.html` lists
+  the explorers used for balance and tip; a new host must also be added to the CSP
+  `connect-src` in `ui/nginx.conf` (two places).
+
 ## Networking notes (important)
 
 - The pusher must join `umbrel_main_network` to reach the Bitcoin node (`APP_BITCOIN_NODE_IP`, typically `10.21.21.8`).

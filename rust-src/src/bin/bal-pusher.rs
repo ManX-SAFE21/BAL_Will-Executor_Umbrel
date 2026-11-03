@@ -230,7 +230,14 @@ async fn main_result(cfg: &MyConfig, network_params: &NetworkParams) -> Result<(
                     "{{\"height\":{},\"network\":\"{}\",\"updated_at\":{}}}",
                     bcinfo.blocks, network_params.db_field, ts
                 );
-                let _ = std::fs::write(dir.join("block-status.json"), json);
+                // One file per network: with several pushers on one data volume a
+                // shared file would show whichever chain found a block last.
+                let file = if network_params.db_field == "bitcoin" {
+                    "block-status.json".to_string()
+                } else {
+                    format!("block-status-{}.json", network_params.db_field)
+                };
+                let _ = std::fs::write(dir.join(file), json);
             }
 
             let average_time = bcinfo.median_time;

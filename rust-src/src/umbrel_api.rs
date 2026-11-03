@@ -674,10 +674,100 @@ fn merge_from_db(src: &str) -> HttpResponse {
     }))
 }
 
+// ---- database snapshots ----
+
+const AUTO_BACKUP_EVERY_DAYS: i64 = 7;
+const AUTO_BACKUP_KEEP: usize = 12;
+const AUTO_BACKUP_CHECK_SECS: u64 = 3600;
+
+/// Write a consistent copy of the database, WAL content included, to `dest`
+/// (which must not exist yet).
+fn snapshot_db(db_file: &str, dest: &Path) -> Result<(), String> {
+    let db = open_db(db_file)?;
+    let dest = dest.to_string_lossy().replace('\'', "''");
+    db.execute(format!("VACUUM INTO '{}';", dest))
+        .map_err(|e| e.to_string())
+}
+
+/// Date of an automatic backup from its name (`bal-YYYYMMDD.db`). Downloaded
+/// (`bal-backup-*.db`) or hand-named files do not match, so they are never pruned.
+fn auto_backup_date(name: &str) -> Option<chrono::NaiveDate> {
+    let date = name.strip_prefix("bal-")?.strip_suffix(".db")?;
+    if date.len() != 8 {
+        return None;
+    }
+    chrono::NaiveDate::parse_from_str(date, "%Y%m%d").ok()
+}
+
+/// Create a backup if the newest automatic one is at least a week old (or none
+/// exists), then keep only the newest `AUTO_BACKUP_KEEP`. Works from the file
+/// dates rather than a weekday, so a backup missed while offline is caught up.
+/// Returns the new file's name, or None if no backup was due.
+fn run_auto_backup(
+    db_file: &str,
+    dir: &Path,
+    today: chrono::NaiveDate,
+) -> Result<Option<String>, String> {
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let mut existing: Vec<(chrono::NaiveDate, String)> = fs::read_dir(dir)
+        .map_err(|e| e.to_string())?
+        .flatten()
+        .filter_map(|e| {
+            let name = e.file_name().to_string_lossy().into_owned();
+            auto_backup_date(&name).map(|d| (d, name))
+        })
+        .collect();
+    existing.sort();
+    if let Some((newest, _)) = existing.last() {
+        if (today - *newest).num_days() < AUTO_BACKUP_EVERY_DAYS {
+            return Ok(None);
+        }
+    }
+
+    let name = format!("bal-{}.db", today.format("%Y%m%d"));
+    // Via a temp name, so an interrupted run never leaves a partial "bal-*.db".
+    let tmp = dir.join(format!("{}.tmp", name));
+    let _ = fs::remove_file(&tmp);
+    snapshot_db(db_file, &tmp)?;
+    fs::rename(&tmp, dir.join(&name)).map_err(|e| e.to_string())?;
+
+    existing.push((today, name.clone()));
+    let excess = existing.len().saturating_sub(AUTO_BACKUP_KEEP);
+    for (_, old) in existing.iter().take(excess) {
+        if let Err(e) = fs::remove_file(dir.join(old)) {
+            log::warn!("auto backup: cannot remove {}: {}", old, e);
+        }
+    }
+    Ok(Some(name))
+}
+
+fn start_auto_backup_thread() {
+    std::thread::spawn(|| {
+        loop {
+            let today = chrono::Utc::now().date_naive();
+            match run_auto_backup(&db_file(), Path::new(&backup_dir()), today) {
+                Ok(Some(name)) => log::info!("auto backup: created {}", name),
+                Ok(None) => log::debug!("auto backup: not due yet"),
+                Err(e) => log::error!("auto backup failed: {}", e),
+            }
+            std::thread::sleep(std::time::Duration::from_secs(AUTO_BACKUP_CHECK_SECS));
+        }
+    });
+}
+
 // ---- handlers ----
 
 async fn backup() -> impl Responder {
-    match fs::read(db_file()) {
+    // Never read bal.db directly: in WAL mode the newest transactions are still
+    // in bal.db-wal, and a copy of the main file alone would silently lack them.
+    let tmp = data_dir().join(format!(
+        "backup-download-{}-{}.tmp",
+        std::process::id(),
+        chrono::Utc::now().timestamp_nanos_opt().unwrap_or(0)
+    ));
+    let result = snapshot_db(&db_file(), &tmp).and_then(|_| fs::read(&tmp).map_err(|e| e.to_string()));
+    let _ = fs::remove_file(&tmp);
+    match result {
         Ok(data) => {
             let filename = format!("bal-backup-{}.db", chrono::Utc::now().format("%Y%m%d"));
             HttpResponse::Ok()
@@ -736,7 +826,7 @@ async fn set_backup_config(body: web::Bytes) -> impl Responder {
         Err(e) => return HttpResponse::BadRequest().body(format!("Invalid JSON: {}", e)),
     };
     // This value becomes `backup_dir()`, which /restore joins a filename onto
-    // and the pusher writes weekly backups into. `restore` sanitizes only the
+    // and the automatic backup writes into. `restore` sanitizes only the
     // filename, so an unvalidated directory here would move the whole target
     // elsewhere. Empty means "use the default next to the database".
     if !cfg.backup_path.is_empty() {
@@ -930,9 +1020,17 @@ async fn custom_logo() -> impl Responder {
     }
 }
 
-// GET /blockheight — current chain tip published by the pusher (heartbeat).
-async fn blockheight() -> impl Responder {
-    match fs::read_to_string(data_dir().join("block-status.json")) {
+// GET /blockheight[?network=<net>] — current chain tip published by that
+// network's pusher (heartbeat). Defaults to mainnet. The whitelist also keeps
+// the query value out of the file path.
+async fn blockheight(req: HttpRequest) -> impl Responder {
+    let file = match query_param(req.query_string(), "network")
+        .filter(|n| n != "bitcoin" && NETWORKS.contains(&n.as_str()))
+    {
+        Some(n) => format!("block-status-{}.json", n),
+        None => "block-status.json".to_string(),
+    };
+    match fs::read_to_string(data_dir().join(file)) {
         Ok(s) => HttpResponse::Ok()
             .content_type("application/json")
             .body(s),
@@ -945,6 +1043,10 @@ async fn blockheight() -> impl Responder {
 // ---------------------------------------------------------------------------
 
 pub fn configure(cfg: &mut web::ServiceConfig) {
+    // configure() runs once per Actix worker; the backup thread must start once.
+    static AUTO_BACKUP: std::sync::Once = std::sync::Once::new();
+    AUTO_BACKUP.call_once(start_auto_backup_thread);
+
     cfg
         // read endpoints
         .service(web::resource("/txstats/{network}").route(web::get().to(stats)))
@@ -971,4 +1073,84 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
         .service(web::resource("/remove-logo").route(web::post().to(remove_logo)))
         .service(web::resource("/custom-logo").route(web::get().to(custom_logo)))
         .service(web::resource("/blockheight").route(web::get().to(blockheight)));
+}
+
+#[cfg(test)]
+mod backup_tests {
+    use super::*;
+
+    fn temp_dir(name: &str) -> std::path::PathBuf {
+        let dir = std::env::temp_dir().join(format!("bal-backup-test-{}-{}", name, std::process::id()));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    fn date(s: &str) -> chrono::NaiveDate {
+        chrono::NaiveDate::parse_from_str(s, "%Y%m%d").unwrap()
+    }
+
+    /// A database with one row that is still only in the WAL file. The returned
+    /// connection must stay open, or closing it would checkpoint the WAL.
+    fn db_with_row_in_wal(dir: &Path) -> (String, sqlite::Connection) {
+        let file = dir.join("bal.db").to_string_lossy().into_owned();
+        let conn = open_db(&file).unwrap();
+        conn.execute("CREATE TABLE t (v TEXT); PRAGMA wal_checkpoint(TRUNCATE); INSERT INTO t VALUES ('recent');")
+            .unwrap();
+        (file, conn)
+    }
+
+    fn row_count(file: &Path) -> i64 {
+        let conn = sqlite::open(file).unwrap();
+        let mut st = conn.prepare("SELECT COUNT(*) FROM t WHERE v = 'recent'").unwrap();
+        st.next().unwrap();
+        st.read::<i64, _>(0).unwrap()
+    }
+
+    #[test]
+    fn snapshot_includes_rows_still_in_the_wal() {
+        let dir = temp_dir("snapshot");
+        let (file, _keep_open) = db_with_row_in_wal(&dir);
+        assert!(fs::metadata(format!("{}-wal", file)).unwrap().len() > 0);
+        let dest = dir.join("copy.db");
+        snapshot_db(&file, &dest).unwrap();
+        assert_eq!(row_count(&dest), 1);
+    }
+
+    #[test]
+    fn first_backup_runs_then_waits_a_week() {
+        let dir = temp_dir("schedule");
+        let (file, _keep_open) = db_with_row_in_wal(&dir);
+        let bdir = dir.join("backup");
+
+        let name = run_auto_backup(&file, &bdir, date("20261101")).unwrap();
+        assert_eq!(name.as_deref(), Some("bal-20261101.db"));
+        assert_eq!(row_count(&bdir.join("bal-20261101.db")), 1);
+        assert!(!bdir.join("bal-20261101.db.tmp").exists());
+
+        assert_eq!(run_auto_backup(&file, &bdir, date("20261107")).unwrap(), None);
+        assert_eq!(
+            run_auto_backup(&file, &bdir, date("20261108")).unwrap().as_deref(),
+            Some("bal-20261108.db")
+        );
+    }
+
+    #[test]
+    fn overdue_backup_is_caught_up_and_old_files_pruned() {
+        let dir = temp_dir("prune");
+        let (file, _keep_open) = db_with_row_in_wal(&dir);
+        let bdir = dir.join("backup");
+        fs::create_dir_all(&bdir).unwrap();
+        for day in 1..=12 {
+            fs::write(bdir.join(format!("bal-202607{:02}.db", day)), b"old").unwrap();
+        }
+        fs::write(bdir.join("bal-backup-20260101.db"), b"manual").unwrap();
+
+        assert!(run_auto_backup(&file, &bdir, date("20261103")).unwrap().is_some());
+
+        assert!(!bdir.join("bal-20260701.db").exists());
+        assert!(bdir.join("bal-20260702.db").exists());
+        assert!(bdir.join("bal-20261103.db").exists());
+        assert!(bdir.join("bal-backup-20260101.db").exists());
+    }
 }

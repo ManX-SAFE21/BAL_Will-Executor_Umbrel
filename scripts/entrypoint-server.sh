@@ -93,9 +93,19 @@ export BAL_SERVER_SIGNET_FIXED_FEE="${BAL_SERVER_SIGNET_FIXED_FEE:-50000}"
 # Testnet
 export BAL_SERVER_TESTNET_ADDRESS="${BAL_SERVER_TESTNET_ADDRESS:-}"
 export BAL_SERVER_TESTNET_FIXED_FEE="${BAL_SERVER_TESTNET_FIXED_FEE:-50000}"
+# Testnet4
+export BAL_SERVER_TESTNET4_ADDRESS="${BAL_SERVER_TESTNET4_ADDRESS:-}"
+export BAL_SERVER_TESTNET4_FIXED_FEE="${BAL_SERVER_TESTNET4_FIXED_FEE:-50000}"
 # Regtest
 export BAL_SERVER_REGTEST_ADDRESS="${BAL_SERVER_REGTEST_ADDRESS:-}"
 export BAL_SERVER_REGTEST_FIXED_FEE="${BAL_SERVER_REGTEST_FIXED_FEE:-0}"
+
+# The server enables a network as soon as its _ADDRESS variable EXISTS, even if
+# empty: it would then advertise a network it has no address or pusher for.
+for net in SIGNET TESTNET TESTNET4 REGTEST; do
+  var="BAL_SERVER_${net}_ADDRESS"
+  [ -n "${!var}" ] || unset "${var}"
+done
 
 # --- 3b. Bridge dashboard settings (settings.json) over the env config ---
 # The dashboard (umbrel_api set_settings) persists the user's bitcoin address,

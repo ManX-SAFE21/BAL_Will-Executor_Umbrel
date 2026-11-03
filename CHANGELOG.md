@@ -5,6 +5,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
 ## [Unreleased]
 
+### Fixed
+- **Automatic database backups work again.** The weekly backup lived in `bal-pusher.rs` and was
+  lost in the Actix 0.3.2 upgrade (`00c1947`), while the dashboard kept promising it; before that
+  it only ran if the pusher happened to start on a Sunday. It now lives in the Umbrel layer
+  (`umbrel_api.rs`): a thread checks hourly and creates a backup when the newest is 7 days old,
+  so a missed one is caught up. Keeps the newest 12; downloaded backups are never pruned.
+- **Manual backup download now includes recent transactions.** It copied `bal.db` alone, leaving
+  out whatever was still in `bal.db-wal`. Both backups now use `VACUUM INTO`.
+
 ### Changed
 - **Versioning scheme clarified**: `<upstream bal-server version>-umbrel.<packaging build>`.
   The first segment always tracks the upstream `bal-server` release this

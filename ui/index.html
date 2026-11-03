@@ -13,18 +13,27 @@
        Signature element: pulsing "time-lock" indicator on txs
        ========================================================= */
     :root {
-      --bg:         #080c14;   /* deep navy-black — not pure black, more cosmic */
-      --surface:    #0f1520;   /* card surfaces */
-      --surface2:   #162030;   /* elevated surface (inputs, hover) */
-      --border:     #1e2d42;   /* subtle borders */
+      /* Palette aligned with safe21.io (its :root: --ink, --ink-2, --panel,
+         --line, --light, --muted, --teal, --orange). Surfaces use only those
+         real values, in the same dark→light order as before; the -dim tints
+         are the brand colours at low alpha rather than invented hexes. */
+      --bg:         #0A0F1C;   /* safe21 --ink */
+      --surface:    #0E1525;   /* safe21 --ink-2 — card surfaces */
+      --surface2:   #111B2E;   /* safe21 --panel — elevated (inputs, hover) */
+      --border:     #1F2B44;   /* safe21 --line */
       --border-hi:  #2a4060;   /* focused borders */
-      --text:       #dde8f5;   /* primary text — cool white */
-      --text-muted: #5a7a9a;   /* secondary / labels */
-      --text-dim:   #334455;   /* placeholder / very muted */
-      --accent:     #F7931A;   /* Bitcoin orange */
-      --accent-dim: #7a4810;   /* dim orange for backgrounds */
-      --success:    #b4f047;   /* acid green — the signature color */
-      --success-dim:#2a4010;
+      --text:       #F5F7FA;   /* safe21 --light */
+      --text-muted: #95A1B5;   /* safe21 --muted */
+      --text-dim:   #6c7889;   /* placeholder / very muted (used on safe21) */
+      --accent:     #2DD4BF;   /* safe21 --teal — the brand accent */
+      --accent-dim: rgba(45, 212, 191, 0.14);
+      --success:    #2DD4BF;   /* teal: on safe21 it is also the "ok" colour */
+      --success-dim:rgba(45, 212, 191, 0.14);
+      /* Orange is reserved for what IS Bitcoin, as on safe21 (.card.bitcoin),
+         plus the "waiting" state: making waiting teal would render it in the
+         same colour as sent/online. */
+      --btc:        #F7931A;   /* safe21 --orange */
+      --btc-dim:    rgba(247, 147, 26, 0.15);
       --error:      #ff4455;
       --error-dim:  #3d0a10;
       --warning:    #ffc740;
@@ -51,7 +60,7 @@
     /* ---- Layout ---- */
     .shell {
       display: grid;
-      grid-template-rows: 56px 1fr;
+      grid-template-rows: auto 1fr;
       min-height: 100vh;
     }
 
@@ -60,6 +69,7 @@
       display: flex;
       align-items: center;
       gap: 12px;
+      min-height: 56px;
       padding: 0 24px;
       border-bottom: 1px solid var(--border);
       background: var(--surface);
@@ -238,7 +248,7 @@
       color: var(--text);
       line-height: 1.1;
     }
-    .stat-value.orange { color: var(--accent); }
+    .stat-value.orange { color: var(--btc); }
     .stat-value.green  { color: var(--success); }
     .stat-value.yellow { color: var(--warning); }
 
@@ -246,6 +256,22 @@
     .status-row { display: flex; gap: 12px; align-items: stretch; margin-bottom: 16px; }
     .status-row-left { flex: 2.3; min-width: 0; display: flex; flex-direction: column; }
     .status-row-left .alert { margin-bottom: 0; flex: 1; align-items: center; }
+    .status-row-left > * + * { margin-top: 10px; }
+    .sys-status {
+      flex: 1; display: flex; flex-direction: column; justify-content: center; gap: 8px;
+      background: var(--surface2); border: 1px solid var(--border); border-radius: 8px;
+      padding: 12px 16px;
+    }
+    .sys-line { display: flex; align-items: center; gap: 10px; font-size: 14px; color: var(--text); }
+    .sys-dot { width: 11px; height: 11px; border-radius: 50%; flex-shrink: 0; background: var(--text-muted); }
+    .sys-dot.ok   { background: var(--success); box-shadow: 0 0 0 3px rgba(45, 212, 191, 0.18); }
+    .sys-dot.warn { background: var(--warning); box-shadow: 0 0 0 3px rgba(255, 199, 64, 0.20); }
+    .sys-dot.bad  { background: var(--error);   box-shadow: 0 0 0 3px rgba(255, 68, 85, 0.20); }
+    .sys-name { min-width: 96px; font-weight: 600; }
+    .sys-state.ok   { color: var(--success); }
+    .sys-state.warn { color: var(--warning); }
+    .sys-state.bad  { color: var(--error); }
+    .sys-detail { color: var(--text-muted); font-size: 13px; }
     .block-hero {
       flex: 1; min-width: 0; margin-bottom: 0;
       display: flex; flex-direction: column; justify-content: center;
@@ -383,7 +409,7 @@
       transition: opacity 0.15s, transform 0.1s;
     }
     .btn:active { transform: scale(0.97); }
-    .btn-primary { background: var(--accent); color: #000; }
+    .btn-primary { background: var(--accent); color: #04201C; }  /* as safe21 .btn-primary */
     .btn-primary:hover { opacity: 0.9; }
     .btn-secondary { background: var(--surface2); color: var(--text); border: 1px solid var(--border); }
     .btn-secondary:hover { border-color: var(--accent); color: var(--accent); }
@@ -425,8 +451,8 @@
       border-radius: 50%;
       flex-shrink: 0;
     }
-    .status-badge.waiting { background: var(--accent-dim); color: var(--accent); }
-    .status-badge.waiting .dot { background: var(--accent); animation: pulse-orange 1.8s infinite; }
+    .status-badge.waiting { background: var(--btc-dim); color: var(--btc); }
+    .status-badge.waiting .dot { background: var(--btc); animation: pulse-orange 1.8s infinite; }
     .status-badge.sent    { background: var(--success-dim); color: var(--success); }
     .status-badge.sent    .dot { background: var(--success); }
     .status-badge.failed  { background: var(--error-dim); color: var(--error); }
@@ -525,24 +551,39 @@
     @keyframes spin { to { transform: rotate(360deg); } }
 
     /* ---- Network selector ---- */
-    .net-chip {
+    .net-switch {
       display: inline-flex;
-      align-items: center;
-      gap: 6px;
-      padding: 4px 10px;
-      border-radius: 20px;
-      font-size: 11px;
-      font-weight: 700;
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
-      cursor: pointer;
-      border: 1px solid var(--border);
-      background: var(--surface2);
-      color: var(--text-muted);
-      transition: all 0.15s;
+      flex-shrink: 0;
+      gap: 2px;
+      padding: 3px;
+      border: 1px solid var(--border-hi);
+      border-radius: 8px;
+      background: var(--bg);
     }
-    .net-chip.active { border-color: var(--accent); color: var(--accent); background: var(--accent-dim); }
-    .net-chips { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 20px; }
+    .net-switch:empty { display: none; }
+    .net-btn {
+      padding: 7px 16px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--text);
+      font: inherit;
+      font-size: 13px;
+      font-weight: 700;
+      white-space: nowrap;
+      cursor: pointer;
+      transition: background 0.15s, color 0.15s;
+    }
+    .net-btn:hover { background: var(--surface2); }
+    .net-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+    /* Orange for real money, green for every test network, as mempool.space does. */
+    .net-btn.active { background: #22c55e; color: #04201C; }
+    .net-btn.active[data-net="bitcoin"] { background: var(--btc); color: #04201C; }
+    .net-indicator { margin: 0 0 14px; font-size: 11px; font-weight: 600; letter-spacing: 0.08em;
+      text-transform: uppercase; color: var(--text-muted); }
+    .net-name { margin-left: 6px; font-size: 14px; font-weight: 700; letter-spacing: 0;
+      text-transform: none; color: #22c55e; }
+    .net-name[data-net="bitcoin"] { color: var(--btc); }
 
     /* ---- Tor address box ---- */
     .tor-box {
@@ -668,6 +709,13 @@
       .stat-grid-fees { grid-template-columns: 1fr 1fr; }
       .logo-sub { display: none; }
     }
+    /* Logo, network selector and pages no longer fit on one line: pages go to a
+       second line, and scroll sideways if they do not fit there either. */
+    @media (max-width: 1000px) {
+      header { flex-wrap: wrap; row-gap: 6px; padding-top: 8px; padding-bottom: 8px; }
+      nav { flex-basis: 100%; margin-left: 0; overflow-x: auto; }
+      .nav-btn { white-space: nowrap; flex-shrink: 0; }
+    }
   </style>
 </head>
 <body>
@@ -678,6 +726,9 @@
       <span id="header-logo-text">Bitcoin After Life</span>
       <span class="logo-sub" id="header-logo-sub">— Will Executor</span>
     </div>
+    <!-- The one network selector: every page follows it. Filled by JS with the
+         networks this server runs. -->
+    <div class="net-switch" id="net-chips" role="group" aria-label="Network"></div>
     <nav>
       <button class="nav-btn active" onclick="showPanel('dashboard')">Dashboard</button>
       <button class="nav-btn" onclick="showPanel('submit')">Submit TX</button>
@@ -698,9 +749,11 @@
       <div class="status-row">
         <div class="status-row-left">
       <!-- ZMQ banners (shown dynamically based on zmq-status.json) -->
-      <div id="zmq-ok" class="alert success" style="display:none">
-        <div class="alert-icon">&#10003;</div>
-        <div><strong>ZMQ connected.</strong> bal-pusher is watching every Bitcoin block.</div>
+      <!-- Live system status. Replaces the old green "ZMQ connected" banner,
+           which only reflected an install-time check (see updateSystemStatus). -->
+      <div class="sys-status" id="sys-status">
+        <div class="sys-line"><span class="sys-dot" id="dot-server"></span><span class="sys-name">BAL server</span><span class="sys-state" id="st-server">checking…</span></div>
+        <div class="sys-line"><span class="sys-dot" id="dot-pusher"></span><span class="sys-name">Pusher</span><span class="sys-state" id="st-pusher">checking…</span><span class="sys-detail" id="dt-pusher"></span></div>
       </div>
       <div id="zmq-restart" class="alert warning" style="display:none">
         <div class="alert-icon">🔄</div>
@@ -753,11 +806,7 @@
         </div>
       </div>
 
-      <!-- Network selector -->
-      <div class="net-chips" id="net-chips">
-        <!-- populated by JS once we know which networks are enabled -->
-      </div>
-
+      <div class="net-indicator">Network <span class="net-name">—</span></div>
       <!-- Network stats card -->
       <div class="card">
         <div class="card-title">Network Stats — <span id="active-net-label">…</span></div>
@@ -832,16 +881,7 @@
           is reached.
         </p>
 
-        <div class="form-group">
-          <label for="submit-network">Network</label>
-          <select id="submit-network">
-            <option value="bitcoin">Mainnet (bitcoin)</option>
-            <option value="testnet">Testnet</option>
-            <option value="signet">Signet</option>
-            <option value="regtest">Regtest</option>
-          </select>
-        </div>
-
+        <div class="net-indicator">Network <span class="net-name">—</span></div>
         <div class="form-group">
           <label for="tx-hex-input">Raw Transaction (hex) — one per line</label>
           <textarea id="tx-hex-input" placeholder="0200000001..."></textarea>
@@ -877,6 +917,7 @@
       <h2>Search <span>Transaction</span></h2>
 
       <div class="card">
+        <div class="net-indicator">Network <span class="net-name">—</span></div>
         <div class="form-group">
           <label for="search-txid">Transaction ID (txid)</label>
           <input type="text" id="search-txid"
@@ -907,8 +948,10 @@
           <span class="info-key">Submitted</span>
           <span class="info-val" id="tx-time">—</span>
         </div>
-        <div style="font-size:12px; color:var(--text-muted); margin-top:12px; margin-bottom:4px;">RAW HEX</div>
-        <div class="tx-hex" id="tx-hex"></div>
+        <div id="tx-hex-box">
+          <div style="font-size:12px; color:var(--text-muted); margin-top:12px; margin-bottom:4px;">RAW HEX</div>
+          <div class="tx-hex" id="tx-hex"></div>
+        </div>
       </div>
 
       <div id="tx-not-found" class="alert error" style="display:none">
@@ -1009,22 +1052,12 @@
           <span class="item"><span class="status-badge elsewhere"><span class="dot"></span>DONE ELSEWHERE</span> <span class="desc">completed by another executor</span></span>
         </div>
 
+        <div class="net-indicator">Network <span class="net-name">—</span></div>
         <div class="tx-toolbar">
           <div class="field tx-search">
             <label for="tx-search-input">Search by TXID</label>
             <svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4.3-4.3"/></svg>
             <input type="text" id="tx-search-input" placeholder="paste a txid or prefix..." autocomplete="off" />
-          </div>
-          <div class="field">
-            <label for="tx-filter-network">Network</label>
-            <select id="tx-filter-network">
-              <option value="">All networks</option>
-              <option value="bitcoin">Bitcoin</option>
-              <option value="testnet">Testnet</option>
-              <option value="testnet4">Testnet4</option>
-              <option value="signet">Signet</option>
-              <option value="regtest">Regtest</option>
-            </select>
           </div>
           <div class="field">
             <label for="tx-page-size">Per page</label>
@@ -1060,9 +1093,8 @@
         <div style="font-size:13px; color:var(--text-muted); margin-bottom:14px; line-height:1.7;">
           <p style="margin-bottom:8px;">
             This app creates an automatic backup of the database every
-            <strong style="color:var(--text);">Sunday</strong>
-            at approximately <strong style="color:var(--text);">02:00</strong>
-            (server local time).
+            <strong style="color:var(--text);">7 days</strong>.
+            If the server was offline when one was due, it is created as soon as the server is back.
           </p>
           <p style="margin-bottom:8px;">
             Backup files are named
@@ -1214,19 +1246,40 @@
 // --- State ---
 const NETWORKS = ['bitcoin', 'testnet', 'testnet4', 'signet', 'regtest'];
 let activeNetwork = 'bitcoin';
+// Public block explorers for balance and chain tip. A network not listed here
+// shows no balance and judges its pusher by time since the last block.
+const CHAIN_API = {
+  bitcoin: 'https://blockstream.info/api',
+  testnet4: 'https://mempool.space/testnet4/api',
+};
 let enabledNetworks = [];
 
 /* ---- Navigation ---- */
+const PANELS = ['dashboard','submit','search','transactions','backup','settings'];
+
 function showPanel(name) {
+  // The hash names the open page, so it can be linked, reloaded and reached with
+  // Back/Forward. pushState does not fire hashchange, so this cannot loop.
+  if ((location.hash.slice(1) || 'dashboard') !== name) history.pushState(null, '', '#' + name);
   document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
   document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
   document.getElementById('panel-' + name).classList.add('active');
   const btns = document.querySelectorAll('.nav-btn');
-  const idx = ['dashboard','submit','search','transactions','backup','settings'].indexOf(name);
+  const idx = PANELS.indexOf(name);
   if (idx >= 0) btns[idx].classList.add('active');
   if (name === 'backup') { loadBackupsList(); loadBackupConfig(); }
   sessionStorage.setItem('activeTab', name);
 }
+
+/* Page named by the URL, or null if it is unknown or not offered on this host. */
+function panelFromHash() {
+  const name = location.hash.slice(1);
+  if (!PANELS.includes(name)) return null;
+  if (IS_PUBLIC && (name === 'backup' || name === 'settings')) return null;
+  return name;
+}
+
+window.addEventListener('hashchange', () => showPanel(panelFromHash() || 'dashboard'));
 
 /* ---- Utility: copy element text to clipboard ---- */
 function copyText(id) {
@@ -1364,29 +1417,56 @@ async function probeNetworks() {
       if (!j.address || j.address === '') continue;
       enabledNetworks.push(net);
       const chip = document.createElement('button');
-      chip.className = 'net-chip' + (net === 'bitcoin' ? ' active' : '');
+      chip.className = 'net-btn';
       chip.id = 'chip-' + net;
-      chip.textContent = net;
+      chip.dataset.net = net;
+      chip.textContent = netLabel(net);
       chip.onclick = () => selectNetwork(net);
       chips.appendChild(chip);
     } catch (_) { /* network not reachable — skip */ }
   }
 
   if (enabledNetworks.length > 0) {
-    selectNetwork(enabledNetworks[0]);
+    // ?net=testnet4 opens the dashboard directly on that network.
+    const wanted = new URLSearchParams(location.search).get('net');
+    if (enabledNetworks.includes(wanted)) {
+      selectNetwork(wanted);
+    } else {
+      selectNetwork(enabledNetworks[0]);
+    }
   } else {
     document.getElementById('active-net-label').textContent = 'no networks enabled';
     document.getElementById('ni-address').textContent = 'No networks configured';
+    loadTransactions();
   }
+}
+
+/* ---- Display name of a network ---- */
+function netLabel(net) {
+  return net === 'bitcoin' ? 'Mainnet' : net.charAt(0).toUpperCase() + net.slice(1);
 }
 
 /* ---- Switch active network and reload its data ---- */
 async function selectNetwork(net) {
   activeNetwork = net;
-  document.querySelectorAll('.net-chip').forEach(c => c.classList.remove('active'));
-  const chip = document.getElementById('chip-' + net);
-  if (chip) chip.classList.add('active');
+  // Keep the network in the URL too; the page stays the same, so no history entry.
+  const url = new URL(location.href);
+  if (net === enabledNetworks[0]) url.searchParams.delete('net');
+  else url.searchParams.set('net', net);
+  history.replaceState(null, '', url);
+  document.querySelectorAll('.net-btn').forEach(c => {
+    c.classList.toggle('active', c.id === 'chip-' + net);
+    c.setAttribute('aria-pressed', c.id === 'chip-' + net);
+  });
   document.getElementById('active-net-label').textContent = net;
+  document.querySelectorAll('.net-name').forEach(el => {
+    el.textContent = netLabel(net);
+    el.dataset.net = net;
+  });
+  updateBlockHeight();
+  updateSystemStatus();
+  txPage = 1;
+  loadTransactions();
 
   // Load info
   try {
@@ -1396,10 +1476,10 @@ async function selectNetwork(net) {
     document.getElementById('ni-fee').textContent = formatSats(j.base_fee) + ' minimum';
     document.getElementById('ni-chain').textContent = j.chain || net;
 
-    // Fetch on-chain balance from Blockstream API
+    // Fetch on-chain balance from the network's public explorer
     const addr = j.address;
-    if (addr && addr.startsWith('bc1')) {
-      fetchBalance(addr);
+    if (addr && CHAIN_API[net]) {
+      fetchBalance(addr, net);
     } else {
       document.getElementById('ni-balance').textContent = '—';
     }
@@ -1458,7 +1538,7 @@ async function loadTorAddress() {
 /* ---- Check ZMQ status ---- */
 async function checkZmqStatus() {
   // Hide all banners first
-  ['zmq-ok', 'zmq-restart', 'zmq-warning'].forEach(id => {
+  ['zmq-restart', 'zmq-warning'].forEach(id => {
     document.getElementById(id).style.display = 'none';
   });
   try {
@@ -1466,8 +1546,8 @@ async function checkZmqStatus() {
     const j = await r.json();
     switch (j.status) {
       case 'ok':
-        // Show subtle success banner — ZMQ is working
-        document.getElementById('zmq-ok').style.display = 'flex';
+        // Nothing to show: an install-time "ok" says nothing about whether
+        // blocks are being watched NOW. Liveness is updateSystemStatus's job.
         break;
       case 'restart_required':
         // We added the config automatically — user needs to restart Bitcoin Core
@@ -1487,12 +1567,12 @@ async function checkZmqStatus() {
   }
 }
 
-/* ---- Fetch on-chain balance from Blockstream API ---- */
-async function fetchBalance(address) {
+/* ---- Fetch on-chain balance from the network's public explorer ---- */
+async function fetchBalance(address, net) {
   const el = document.getElementById('ni-balance');
   el.textContent = 'Loading…';
   try {
-    const r = await fetch('https://blockstream.info/api/address/' + address);
+    const r = await fetch(CHAIN_API[net] + '/address/' + encodeURIComponent(address));
     const j = await r.json();
     const funded = j.chain_stats.funded_txo_sum || 0;
     const spent  = j.chain_stats.spent_txo_sum  || 0;
@@ -1506,7 +1586,7 @@ async function fetchBalance(address) {
 /* ---- Submit transaction ---- */
 async function submitTx() {
   const hex = document.getElementById('tx-hex-input').value.trim();
-  const net = document.getElementById('submit-network').value;
+  const net = activeNetwork;
   const btn = document.getElementById('submit-btn');
   const result = document.getElementById('submit-result');
 
@@ -1563,13 +1643,24 @@ async function searchTx() {
   }
 
   try {
-    // Use the Umbrel detail endpoint (includes `confirmations`, so the state
-    // badge matches the main list). Upstream's /searchtx does not return it.
-    const r = await fetch('/api/txdetail?txid=' + encodeURIComponent(txid));
-
-    if (!r.ok) { notFoundEl.style.display = 'flex'; return; }
-    const j = await r.json();
-    if (!j || !j.txid) { notFoundEl.style.display = 'flex'; return; }
+    // Use the Umbrel endpoints (they include `confirmations`, so the state badge
+    // matches the main list). Upstream's /searchtx does not return it. /txdetail
+    // is refused on the public domain because it exposes the raw signed
+    // transaction, so there the search reads the public list, exact match only.
+    let j;
+    if (IS_PUBLIC) {
+      const params = new URLSearchParams({ network: activeNetwork, show_failed: '1', limit: '1', search: txid });
+      const r = await fetch('/api/txlist?' + params);
+      if (!r.ok) { notFoundEl.style.display = 'flex'; return; }
+      const data = await r.json();
+      j = (data.txs || []).find(t => t.txid === txid.toLowerCase());
+    } else {
+      const r = await fetch('/api/txdetail?txid=' + encodeURIComponent(txid));
+      if (!r.ok) { notFoundEl.style.display = 'flex'; return; }
+      j = await r.json();
+    }
+    // Like every page, the search answers for the selected network only.
+    if (!j || !j.txid || j.network !== activeNetwork) { notFoundEl.style.display = 'flex'; return; }
 
     const st = resolveState(j);
     document.getElementById('tx-status-badge').innerHTML = stateBadge(j);
@@ -1580,6 +1671,7 @@ async function searchTx() {
     document.getElementById('tx-time').textContent = j.date_creation || '—';
 
     document.getElementById('tx-hex').textContent = j.tx || '—';
+    document.getElementById('tx-hex-box').style.display = j.tx ? '' : 'none';
     resultEl.classList.add('visible');
   } catch (e) {
     notFoundEl.style.display = 'flex';
@@ -1592,10 +1684,8 @@ document.getElementById('search-txid').addEventListener('keydown', e => {
 });
 
 /* ---- Transactions toolbar wiring (filters reset to page 1) ---- */
-['tx-filter-network', 'tx-page-size'].forEach(id => {
-  const el = document.getElementById(id);
-  if (el) el.addEventListener('change', () => { txPage = 1; loadTransactions(); });
-});
+document.getElementById('tx-page-size')
+  .addEventListener('change', () => { txPage = 1; loadTransactions(); });
 (function () {
   const s = document.getElementById('tx-search-input');
   if (s) s.addEventListener('input', () => {
@@ -1928,7 +2018,7 @@ let txSearchTimer = null;
 async function loadTransactions() {
   const container = document.getElementById('tx-list-container');
   const pager = document.getElementById('tx-pager');
-  const network = document.getElementById('tx-filter-network').value;
+  const network = activeNetwork;
   // DONE ELSEWHERE (status=2) transactions are always shown — no more toggle.
   const showFailed = true;
   const size = parseInt(document.getElementById('tx-page-size').value, 10) || 25;
@@ -1936,7 +2026,7 @@ async function loadTransactions() {
   const offset = (txPage - 1) * size;
 
   const params = new URLSearchParams();
-  if (network) params.set('network', network);
+  params.set('network', network);
   if (showFailed) params.set('show_failed', '1');
   if (search) params.set('search', search);
   params.set('limit', size);
@@ -1949,6 +2039,7 @@ async function loadTransactions() {
   try {
     const r = await fetch('/api/txlist?' + params.toString());
     const data = await r.json();
+    if (network !== activeNetwork) return; // the user switched network meanwhile
     const txs = data.txs || [];
     const total = data.total || 0;
 
@@ -1984,7 +2075,7 @@ async function loadTransactions() {
     container.innerHTML = '<table class="tx-table">' + head + body + '</table>';
 
     const from = offset + 1, to = Math.min(offset + size, total);
-    const filtered = (network || search || !showFailed) ? ' (filtered)' : '';
+    const filtered = (search || !showFailed) ? ' (filtered)' : '';
     document.getElementById('tx-count').innerHTML =
       'Showing <b>' + from + '–' + to + '</b> of <b>' + total + '</b>' + filtered;
     document.getElementById('tx-pages').innerHTML = buildTxPager(txPage, pages);
@@ -2264,7 +2355,8 @@ async function updateBlockHeight() {
   const sub = document.getElementById('block-age');
   if (!hero || !num || !sub) return;
   try {
-    const r = await fetch('/api/blockheight');
+    const net = activeNetwork;
+    const r = await fetch('/api/blockheight?network=' + net);
     const j = await r.json();
     if (!j || j.height === null || j.height === undefined) {
       num.textContent = '—';
@@ -2272,6 +2364,7 @@ async function updateBlockHeight() {
       hero.className = 'card block-hero dead';
       return;
     }
+    if (net !== activeNetwork) return; // the user switched network meanwhile
     num.textContent = Number(j.height).toLocaleString();
     if (j.network) document.getElementById('block-net').textContent = j.network;
     if (j.updated_at) {
@@ -2279,9 +2372,10 @@ async function updateBlockHeight() {
       const m = Math.floor(ageSec / 60);
       sub.textContent = m < 1 ? 'last block just now' : ('last block ' + m + ' min ago');
       // Bitcoin blocks average ~10 min; a long gap may just be variance, but a
-      // very long one suggests the pusher stopped watching.
-      hero.className = 'card block-hero' +
-        (ageSec > 5400 ? ' dead' : ageSec > 3600 ? ' stale' : '');
+      // very long one suggests the pusher stopped watching. Not on test
+      // networks, where hours without a block are normal.
+      hero.className = 'card block-hero' + (net !== 'bitcoin' ? '' :
+        (ageSec > 5400 ? ' dead' : ageSec > 3600 ? ' stale' : ''));
     } else {
       sub.textContent = '';
       hero.className = 'card block-hero';
@@ -2291,20 +2385,96 @@ async function updateBlockHeight() {
   }
 }
 
+/* ---- System status: BAL server + pusher, live ----
+   Replaces the green "ZMQ connected" banner. That banner read zmq-status.json,
+   which check-zmq.sh writes ONCE at install time (the file on the device was
+   from 16 Jul), so it said "connected" through the whole 21 Oct outage — while
+   the pusher container had been removed and no block was watched for
+   10 h 53 min. Both dots here are measured on every refresh:
+     server: does the API answer right now?
+     pusher: is its last processed block the real chain tip of the selected
+             network? (via CHAIN_API, which CSP allows); if that cannot be
+             reached, falls back to time since the last processed block. */
+function setSysStatus(key, cls, state, detail) {
+  const dot = document.getElementById('dot-' + key);
+  const st  = document.getElementById('st-' + key);
+  const dt  = document.getElementById('dt-' + key);
+  if (dot) dot.className = 'sys-dot ' + cls;
+  if (st) { st.className = 'sys-state ' + cls; st.textContent = state; }
+  if (dt) dt.textContent = detail || '';
+}
+
+async function updateSystemStatus() {
+  let serverOk = false;
+  try {
+    const r = await fetch('/api/version', { cache: 'no-store' });
+    serverOk = r.ok;
+  } catch (e) { /* unreachable = offline */ }
+  setSysStatus('server', serverOk ? 'ok' : 'bad', serverOk ? 'Online' : 'Offline');
+
+  const net = activeNetwork;
+  let bh = null;
+  try {
+    const r = await fetch('/api/blockheight?network=' + net, { cache: 'no-store' });
+    if (r.ok) bh = await r.json();
+  } catch (e) { /* handled below */ }
+  if (!bh || bh.height === null || bh.height === undefined) {
+    setSysStatus('pusher', 'bad', 'Offline', '· no block data');
+    return;
+  }
+
+  // Primary signal: blocks behind the real tip. Immune to the natural
+  // variance of block times, which a clock-based check mistakes for trouble.
+  let tip = NaN;
+  if (CHAIN_API[net]) {
+    try {
+      const r = await fetch(CHAIN_API[net] + '/blocks/tip/height', { cache: 'no-store' });
+      if (r.ok) tip = parseInt(await r.text(), 10);
+    } catch (e) { /* fall back to time */ }
+  }
+  if (net !== activeNetwork) return; // the user switched network meanwhile
+  if (Number.isFinite(tip)) {
+    const lag = tip - Number(bh.height);
+    if (lag <= 1)       setSysStatus('pusher', 'ok',   'Online',  '· in sync with the network');
+    else if (lag === 2) setSysStatus('pusher', 'warn', 'Lagging', '· 2 blocks behind');
+    else                setSysStatus('pusher', 'bad',  'Offline', '· ' + lag + ' blocks behind');
+    return;
+  }
+
+  // Fallback: same thresholds as the block heartbeat (60 / 90 min).
+  const age = bh.updated_at ? Math.floor(Date.now() / 1000) - Number(bh.updated_at) : Infinity;
+  const ago = Number.isFinite(age) ? '· last block ' + Math.floor(age / 60) + ' min ago' : '';
+  if (age <= 3600)      setSysStatus('pusher', 'ok',   'Online',  ago);
+  else if (age <= 5400) setSysStatus('pusher', 'warn', 'Lagging', ago);
+  else                  setSysStatus('pusher', 'bad',  'Offline', ago);
+}
+
 /* ---- Bootstrap ---- */
 (async function init() {
+  // A page named in the URL wins. Without one, a link that names only the network
+  // opens the dashboard, and a plain reload returns to the last page.
   const saved = sessionStorage.getItem('activeTab');
-  if (saved && saved !== 'dashboard') showPanel(saved);
+  const hasNet = new URLSearchParams(location.search).has('net');
+  if (panelFromHash()) {
+    showPanel(panelFromHash());
+  } else if (location.hash) {
+    history.replaceState(null, '', location.pathname + location.search);
+  } else if (!hasNet && PANELS.includes(saved) && saved !== 'dashboard'
+             && !(IS_PUBLIC && (saved === 'backup' || saved === 'settings'))) {
+    history.replaceState(null, '', '#' + saved);
+    showPanel(saved);
+  }
   await loadVersion();
   await checkZmqStatus();
+  await updateSystemStatus();
   await updateBlockHeight();
   await probeNetworks();
   await loadTorAddress();
   await loadSettings();
-  await loadTransactions();
   await updateHeaderBranding();
   // Poll the block height so the number advances live.
   setInterval(updateBlockHeight, 20000);
+  setInterval(updateSystemStatus, 30000);
 })();
 </script>
 </body>
