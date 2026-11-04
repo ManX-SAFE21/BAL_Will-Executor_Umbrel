@@ -11,7 +11,13 @@
 #   BAL_SEND_STATS=true                       # report to the welist aggregator
 #   BAL_LOG_LEVEL=info                        # RUST_LOG for both binaries
 #
-# Only these three keys are read; anything else in the file is ignored, and
+# and, for a test network served by a pusher that runs outside the app (the
+# app itself watches mainnet only), its payout address and fee:
+#
+#   BAL_SERVER_TESTNET4_ADDRESS=tb1q...
+#   BAL_SERVER_TESTNET4_FIXED_FEE=1000
+#
+# (SIGNET and TESTNET work the same way.) Only these keys are read; anything else in the file is ignored, and
 # the file is parsed, never executed. When the file does not exist (the manual
 # docker-compose.umbrel.yml stack, the dev stack) nothing changes.
 # =============================================================================
@@ -23,6 +29,9 @@ if [[ -f "${APP_ENV_FILE}" ]]; then
     _key="${_key//[[:space:]]/}"
     case "${_key}" in
       BAL_PUBLIC_URL|BAL_SEND_STATS|BAL_LOG_LEVEL) ;;
+      BAL_SERVER_SIGNET_ADDRESS|BAL_SERVER_SIGNET_FIXED_FEE) ;;
+      BAL_SERVER_TESTNET_ADDRESS|BAL_SERVER_TESTNET_FIXED_FEE) ;;
+      BAL_SERVER_TESTNET4_ADDRESS|BAL_SERVER_TESTNET4_FIXED_FEE) ;;
       *) continue ;;
     esac
     _value="${_value%$'\r'}"
