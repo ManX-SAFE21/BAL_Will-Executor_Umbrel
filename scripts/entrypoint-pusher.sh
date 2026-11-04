@@ -53,6 +53,11 @@ sleep 2
 #   BAL_PUSHER_BITCOIN_RPC_USER — username
 #   BAL_PUSHER_BITCOIN_RPC_PASSWORD — password
 
+# Operator options of an App Store install (/data/app.env), if present.
+if [[ -f /scripts/load-app-env.sh ]]; then
+  source /scripts/load-app-env.sh
+fi
+
 BITCOIN_IP="${APP_BITCOIN_NODE_IP:-}"
 BITCOIN_RPC_PORT="${APP_BITCOIN_RPC_PORT:-8332}"
 BITCOIN_RPC_USER="${APP_BITCOIN_RPC_USER:-}"

@@ -25,7 +25,17 @@ log() { echo "[entrypoint-ui] $*"; }
 
 mkdir -p "${UI_STATIC_DIR}"
 
-if [[ -f "${TOR_HOSTNAME_FILE}" ]]; then
+# App Store install: umbreld runs the onion service itself (in front of its
+# login proxy) and passes the address as APP_HIDDEN_SERVICE. The placeholders
+# it uses when Tor access is off mean "no address".
+case "${TOR_ADDRESS:-}" in
+  ""|not-enabled.onion|notyetset.onion) TOR_ADDRESS="" ;;
+esac
+
+if [[ -n "${TOR_ADDRESS}" ]]; then
+  log "Tor address from the environment: ${TOR_ADDRESS}"
+  printf '{"address":"%s"}\n' "${TOR_ADDRESS}" > "${TOR_STATUS_FILE}"
+elif [[ -f "${TOR_HOSTNAME_FILE}" ]]; then
   TOR_ADDR=$(cat "${TOR_HOSTNAME_FILE}" | tr -d '[:space:]')
   if [[ -n "${TOR_ADDR}" ]]; then
     log "Tor address found: ${TOR_ADDR}"

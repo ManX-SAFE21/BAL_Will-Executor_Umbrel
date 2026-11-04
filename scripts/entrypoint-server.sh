@@ -39,6 +39,11 @@ done
 mkdir -p "${KEY_DIR}"
 log "Data directory ready: ${DATA_DIR}"
 
+# Operator options of an App Store install (/data/app.env), if present.
+if [[ -f /scripts/load-app-env.sh ]]; then
+  source /scripts/load-app-env.sh
+fi
+
 # --- 2. Generate Ed25519 keypair on first run ---
 # The private key is used by bal-pusher to sign stats reports.
 # The public key is served at GET /.pub_key.pem for clients to verify.

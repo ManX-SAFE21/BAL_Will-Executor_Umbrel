@@ -1,0 +1,122 @@
+# Builds the Docker images that the Umbrel App Store install pulls.
+#
+# Umbrel does not compile anything when it installs an app from a store: it
+# pulls ready-made images. This workflow builds them for both architectures
+# Umbrel runs on (amd64: Umbrel Home / PCs, arm64: Raspberry Pi), each on a
+# native runner (no QEMU, so the Rust build takes minutes, not an hour), and
+# publishes one multi-arch tag per image on GitHub Container Registry:
+#
+#   ghcr.io/manx-safe21/bal-will-executor:<version>      server + pusher
+#   ghcr.io/manx-safe21/bal-will-executor-ui:<version>   nginx dashboard
+#
+# <version> is the `version:` field of umbrel-app.yml. Run it by pushing a
+# tag v<version> (e.g. v0.3.2-umbrel.3) or from the Actions tab.
+
+name: images
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  REGISTRY: ghcr.io
+  OWNER: manx-safe21
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        image:
+          - { name: bal-will-executor,    dockerfile: docker/Dockerfile.rust }
+          - { name: bal-will-executor-ui, dockerfile: docker/Dockerfile.ui }
+        platform:
+          - { arch: amd64, runner: ubuntu-24.04 }
+          - { arch: arm64, runner: ubuntu-24.04-arm }
+    runs-on: ${{ matrix.platform.runner }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.image.dockerfile }}
+          platforms: linux/${{ matrix.platform.arch }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.description=Bitcoin After Life Will Executor for Umbrel
+          outputs: type=image,name=${{ env.REGISTRY }}/${{ env.OWNER }}/${{ matrix.image.name }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.image.name }}-${{ matrix.platform.arch }}
+
+      - name: Record digest
+        run: |
+          mkdir -p /tmp/digests
+          echo "${{ steps.build.outputs.digest }}" > "/tmp/digests/${{ matrix.image.name }}--${{ matrix.platform.arch }}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: digest-${{ matrix.image.name }}--${{ matrix.platform.arch }}
+          path: /tmp/digests/*
+          retention-days: 1
+
+  merge:
+    needs: build
+    runs-on: ubuntu-24.04
+    strategy:
+      matrix:
+        image: [bal-will-executor, bal-will-executor-ui]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: digest-${{ matrix.image }}--*
+          merge-multiple: true
+          path: /tmp/digests
+
+      - uses: docker/setup-buildx-action@v3
+
+      - uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create the multi-arch tag
+        run: |
+          set -euo pipefail
+          version="$(sed -nE 's/^version:[[:space:]]*"?([^"]+)"?.*/\1/p' umbrel-app.yml | head -n1)"
+          [ -n "${version}" ] || { echo "no version in umbrel-app.yml" >&2; exit 1; }
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "tag ${GITHUB_REF_NAME} does not match umbrel-app.yml version ${version}" >&2
+            exit 1
+          fi
+          repo="${REGISTRY}/${OWNER}/${{ matrix.image }}"
+          sources=""
+          for f in /tmp/digests/${{ matrix.image }}--*; do
+            sources="${sources} ${repo}@$(cat "$f")"
+          done
+          docker buildx imagetools create -t "${repo}:${version}" -t "${repo}:latest" ${sources}
+          docker buildx imagetools inspect "${repo}:${version}"
+          {
+            echo "### ${{ matrix.image }}"
+            echo '```'
+            docker buildx imagetools inspect "${repo}:${version}" --format '{{json .Manifest.Digest}}'
+            echo '```'
+          } >> "${GITHUB_STEP_SUMMARY}"
