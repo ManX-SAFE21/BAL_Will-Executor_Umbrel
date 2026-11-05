@@ -468,6 +468,12 @@ struct BitcoinSettings {
     logo_text: String,
     #[serde(default)]
     logo_format: String,
+    // Testnet4, served when the "Will Executor Testnet4" app (its node and
+    // pusher) is installed next to this one. Empty = testnet4 not offered.
+    #[serde(default)]
+    testnet4_address: String,
+    #[serde(default)]
+    testnet4_fee: u64,
 }
 
 #[derive(Debug, Serialize, Deserialize, Default)]
@@ -905,7 +911,45 @@ async fn get_settings() -> impl Responder {
         "info": s.info,
         "logo_text": s.logo_text,
         "has_logo": has_logo,
+        "testnet4_address": s.testnet4_address,
+        "testnet4_fee": s.testnet4_fee,
     }))
+}
+
+#[derive(Debug, Deserialize)]
+struct NetSettings {
+    address: String,
+    fee: u64,
+}
+
+// POST /settings/testnet4 — payout address and fee for testnet4. Kept apart
+// from POST /settings so saving the mainnet form never touches these.
+async fn set_settings_testnet4(body: web::Bytes) -> impl Responder {
+    let incoming: NetSettings = match serde_json::from_slice(&body) {
+        Ok(s) => s,
+        Err(e) => return HttpResponse::BadRequest().body(format!("Invalid JSON: {}", e)),
+    };
+    let addr = incoming.address.trim().to_string();
+    if !addr.is_empty() {
+        use std::str::FromStr;
+        let ok = bitcoin::Address::from_str(&addr)
+            .map(|a| a.is_valid_for_network(bitcoin::Network::Testnet4))
+            .unwrap_or(false);
+        if !ok {
+            return HttpResponse::BadRequest()
+                .body("Not a valid testnet4 address (tb1...) — refusing to save it.");
+        }
+        if incoming.fee == 0 {
+            return HttpResponse::BadRequest().body("Fee cannot be 0");
+        }
+    }
+    let mut s = load_settings();
+    s.testnet4_address = addr;
+    s.testnet4_fee = incoming.fee;
+    match save_settings(&s) {
+        Ok(_) => HttpResponse::Ok().body("ok"),
+        Err(e) => HttpResponse::InternalServerError().body(format!("error: {}", e)),
+    }
 }
 
 async fn set_settings(body: web::Bytes) -> impl Responder {
@@ -1067,6 +1111,9 @@ pub fn configure(cfg: &mut web::ServiceConfig) {
             web::resource("/settings")
                 .route(web::get().to(get_settings))
                 .route(web::post().to(set_settings)),
+        )
+        .service(
+            web::resource("/settings/testnet4").route(web::post().to(set_settings_testnet4)),
         )
         .service(web::resource("/restart-server").route(web::post().to(restart_server)))
         .service(web::resource("/upload-logo").route(web::post().to(upload_logo)))

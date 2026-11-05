@@ -994,6 +994,30 @@
         <div id="settings-result" class="result-box"></div>
       </div>
 
+      <!-- Testnet4: shown only when the testnet4 companion app (node + pusher)
+           is running, i.e. when its pusher publishes block-status-testnet4. -->
+      <div class="card" id="settings-t4-card" style="display:none">
+        <div class="card-title">Bitcoin Testnet4</div>
+
+        <div class="form-group">
+          <label for="settings-t4-address">Payment Address</label>
+          <input type="text" id="settings-t4-address" placeholder="tb1q..." />
+          <div class="form-hint">Testnet4 address (tb1...). Leave empty to stop offering testnet4.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="settings-t4-fee">Minimum Fee (satoshis)</label>
+          <input type="text" id="settings-t4-fee" placeholder="1000" />
+          <div class="form-hint">Minimum fee in testnet4 satoshis that each transaction must pay.</div>
+        </div>
+
+        <button class="btn btn-primary" onclick="saveTestnet4Settings()" id="settings-t4-save-btn">
+          Save Testnet4
+        </button>
+
+        <div id="settings-t4-result" class="result-box"></div>
+      </div>
+
       <!-- Server Branding -->
       <div class="card">
         <div class="card-title">Server Branding</div>
@@ -1732,6 +1756,16 @@ async function loadSettings() {
     if (j.fee) document.getElementById('settings-fee').value = j.fee;
     if (j.info) document.getElementById('settings-info').value = j.info;
     if (j.logo_text) document.getElementById('settings-logo-text').value = j.logo_text;
+    if (j.testnet4_address) document.getElementById('settings-t4-address').value = j.testnet4_address;
+    if (j.testnet4_fee) document.getElementById('settings-t4-fee').value = j.testnet4_fee;
+    let t4 = !!j.testnet4_address;
+    if (!t4) {
+      try {
+        const b = await (await fetch('/api/blockheight?network=testnet4', { cache: 'no-store' })).json();
+        t4 = b && b.height != null;
+      } catch (_) {}
+    }
+    document.getElementById('settings-t4-card').style.display = t4 ? '' : 'none';
     if (j.has_logo) {
       document.getElementById('logo-preview-img').src = '/api/custom-logo?' + Date.now();
       document.getElementById('logo-preview-img').style.display = '';
@@ -1956,6 +1990,39 @@ async function confirmSettings() {
   btn.innerHTML = 'Save Changes';
 }
 
+async function saveTestnet4Settings() {
+  const el = document.getElementById('settings-t4-result');
+  const addr = document.getElementById('settings-t4-address').value.trim();
+  const feeNum = parseInt(document.getElementById('settings-t4-fee').value.trim() || '0', 10);
+  if (addr && (isNaN(feeNum) || feeNum < 1)) {
+    el.textContent = 'Enter a valid fee in satoshis (minimum 1).';
+    el.className = 'result-box visible err';
+    return;
+  }
+  const btn = document.getElementById('settings-t4-save-btn');
+  btn.disabled = true;
+  try {
+    const r = await fetch('/api/settings/testnet4', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ address: addr, fee: isNaN(feeNum) ? 0 : feeNum })
+    });
+    if (r.ok) {
+      el.innerHTML =
+        '✓ Testnet4 settings saved. <strong>The server needs a restart for this to take effect.</strong><br/>' +
+        '<button class="btn btn-secondary" style="margin-top:8px" onclick="restartServer(\'settings-t4-result\')">Restart server now</button>';
+      el.className = 'result-box visible ok';
+    } else {
+      el.textContent = '✗ Error: ' + await r.text();
+      el.className = 'result-box visible err';
+    }
+  } catch (e) {
+    el.textContent = '✗ Network error: ' + e.message;
+    el.className = 'result-box visible err';
+  }
+  btn.disabled = false;
+}
+
 function showSettingsMsg(text, cls) {
   const el = document.getElementById('settings-result');
   el.textContent = text;
@@ -1975,8 +2042,8 @@ function showSettingsRestartPrompt() {
   el.className = 'result-box visible ok';
 }
 
-async function restartServer() {
-  const el = document.getElementById('settings-result');
+async function restartServer(resultId) {
+  const el = document.getElementById(resultId || 'settings-result');
   el.innerHTML = '<span class="spinner"></span> Restarting server…';
   el.className = 'result-box visible';
   try {

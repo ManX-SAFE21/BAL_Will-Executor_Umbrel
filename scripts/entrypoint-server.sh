@@ -126,6 +126,15 @@ if [ -f "${SETTINGS_FILE}" ] && command -v jq >/dev/null 2>&1; then
   [ -n "${s_addr}" ] && export BAL_SERVER_BITCOIN_ADDRESS="${s_addr}"
   [ -n "${s_fee}" ] && [ "${s_fee}" != "0" ] && export BAL_SERVER_BITCOIN_FIXED_FEE="${s_fee}"
   [ -n "${s_info}" ] && export BAL_SERVER_INFO="${s_info}"
+  # Testnet4 (dashboard Settings, shown when the testnet4 companion app runs).
+  s_t4_addr="$(jq -r '.testnet4_address // empty' "${SETTINGS_FILE}" 2>/dev/null)"
+  s_t4_fee="$(jq -r '.testnet4_fee // empty'     "${SETTINGS_FILE}" 2>/dev/null)"
+  if [ -n "${s_t4_addr}" ]; then
+    export BAL_SERVER_TESTNET4_ADDRESS="${s_t4_addr}"
+    if [ -n "${s_t4_fee}" ] && [ "${s_t4_fee}" != "0" ]; then
+      export BAL_SERVER_TESTNET4_FIXED_FEE="${s_t4_fee}"
+    fi
+  fi
   log "Applied settings.json over env (address/fee/info)"
 fi
 
